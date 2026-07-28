@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Packaging / builds
+build/
+dist/
+.eggs/
+*.egg-info/
+*.egg
+
+# Virtual envs
+.venv/
+env/
+venv/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# NOTE: uv.lock is TRACKED on purpose (reproducible installs).
+# NOTE: *.spec is TRACKED on purpose (PyInstaller spec is source, phase 06).

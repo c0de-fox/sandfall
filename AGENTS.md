@@ -13,3 +13,16 @@ Create a build system that produces a single self-contained binary for each plat
 Use the agents that are available to you for your work. 
 All work must be planned using the task manager agent.
 
+## Commands
+
+All commands run from the repo root.
+
+- **Run the game:** `uv run sandfall`
+- **Run tests:** `uv run pytest`
+- **Lint:** `uv run ruff check .`
+- **Format:** `uv run ruff format .`
+- **Type-check:** `uv run mypy src`
+- **Sync deps:** `uv sync`
+
+Python and dependencies are managed by `uv`. The lockfile (`uv.lock`) is committed.
+

@@ -40,6 +40,8 @@ from .config import (
     GRID_WIDTH,
     INITIAL_WINDOW_H,
     INITIAL_WINDOW_W,
+    MIN_WINDOW_H,
+    MIN_WINDOW_W,
     clamp_brush_radius,
     compute_grid_dims,
 )
@@ -72,6 +74,7 @@ class Game:
     """Top-level controller wiring input, simulation, and rendering together."""
 
     _screen: pygame.Surface
+    _window: pygame.Window
     _clock: pygame.time.Clock
     _grid: Grid
     _sim: Simulation
@@ -89,10 +92,22 @@ class Game:
 
     def __init__(self) -> None:
         pygame.init()
-        self._screen = pygame.display.set_mode(
-            (INITIAL_WINDOW_W, INITIAL_WINDOW_H), pygame.RESIZABLE
+        # Use the modern pygame.Window API (pygame-ce 2.5.2+) instead of
+        # pygame.display.set_mode(): the Window is created ONCE and
+        # get_surface() returns a surface that "will change size with the
+        # Window" (per the pygame-ce stubs), so a resize never destroys /
+        # recreates the display surface. The classic set_mode() API closes
+        # the previous display on every call, which is what produced the
+        # resize flicker (the window vanished and reappeared on each
+        # VIDEORESIZE). The compositor enforces the minimum size via
+        # window.minimum_size, replacing the old manual clamp.
+        self._window = pygame.Window(
+            "Sandfall",
+            size=(INITIAL_WINDOW_W, INITIAL_WINDOW_H),
+            resizable=True,
         )
-        pygame.display.set_caption("Sandfall")
+        self._window.minimum_size = (MIN_WINDOW_W, MIN_WINDOW_H)
+        self._screen = self._window.get_surface()
         self._clock = pygame.time.Clock()
         self._grid = Grid(GRID_WIDTH, GRID_HEIGHT)
         self._sim = Simulation(self._grid)
@@ -121,8 +136,9 @@ class Game:
                 self._erase_if_dragging()
                 if self._loop.consume_step():
                     self._sim.step()
+                self._apply_resize_if_changed()
                 self._draw()
-                pygame.display.flip()
+                self._window.flip()
                 self._clock.tick(FPS)
                 frame += 1
                 if frame_cap is not None and frame >= frame_cap:
@@ -160,41 +176,41 @@ class Game:
                 sel = self._ui.swatch_at(mx, my)
                 if sel is not None:
                     self.selected_element = sel
-            elif event.type == pygame.VIDEORESIZE:
-                # The OS/window manager reports the new pixel size; clamp and
-                # rebuild the grid + UI to match (see _handle_resize).
-                self._handle_resize(event.w, event.h)
+            # NOTE: no VIDEORESIZE branch. Window resize is detected by polling
+            # self._window.size every frame in _apply_resize_if_changed(); that
+            # path is event-driver-independent and never recreates the window
+            # (the pygame.Window API does not need a set_mode call on resize).
 
-    def _handle_resize(self, raw_w: int, raw_h: int) -> None:
-        """Acknowledge a window resize and rebuild the grid + UI to match.
+    def _apply_resize_if_changed(self) -> None:
+        """Detect the window has resized and rebuild the grid + UI to match.
 
-        Accepts the compositor's configured size **verbatim** -- on Wayland the
-        app must never request a different size (e.g. clamp to a minimum) or
-        the compositor fights back and the window flickers / snaps instead of
-        resizing. The grid's minimum cell count is enforced separately by
-        :func:`compute_grid_dims`, so an aggressively small window still gets a
-        usable grid while the window itself stays exactly what the user
-        dragged. Cells stay square (floor snap); leftover pixels are
-        ``BG_COLOR``. The palette bar stays a fixed ``PALETTE_BAR_HEIGHT``
-        pinned to the bottom. Content outside the overlapping region is lost
-        permanently (see :func:`migrate_grid`).
+        Polled once per frame from :meth:`run` (not driven by a resize event),
+        because the pygame.Window API auto-tracks the window size in its
+        ``get_surface()`` surface — there is no ``set_mode`` call to make and
+        no event to acknowledge. Comparing ``self._window.size`` against the
+        last size we built for is event-driver-independent and robust on both
+        Wayland and X11.
+
+        The grid's minimum cell count is enforced by
+        :func:`compute_grid_dims`; the window's minimum pixel size is enforced
+        by the compositor via ``Window.minimum_size`` (set in ``__init__``),
+        so no manual clamp is needed here. Cells stay square (floor snap);
+        leftover pixels are ``BG_COLOR``. The palette bar stays a fixed
+        ``PALETTE_BAR_HEIGHT`` pinned to the bottom. Content outside the
+        overlapping region is lost permanently (see :func:`migrate_grid`).
         """
-        # No-op if nothing changed (also skips a redundant set_mode call).
-        if (raw_w, raw_h) == (self._window_w, self._window_h):
+        w, h = self._window.size
+        if (w, h) == (self._window_w, self._window_h):
             return
-        w, h = raw_w, raw_h
         cols, rows = compute_grid_dims(w, h)
         new_grid = Grid(cols, rows)
         migrate_grid(self._grid, new_grid)
         self._grid = new_grid
         self._sim = Simulation(self._grid)
         self._window_w, self._window_h = w, h
-        # Acknowledge the new size with the EXACT event pixels so the display
-        # surface matches. Passing the exact size -- never a clamped/snapped
-        # value -- is what keeps Wayland compositors from re-fighting the
-        # resize (and we additionally prefer the X11 driver at startup on
-        # Linux; see sandfall.__main__).
-        self._screen = pygame.display.set_mode((w, h), pygame.RESIZABLE)
+        # The get_surface() surface auto-tracks the window size; refresh our
+        # reference so we render to the up-to-date surface this frame.
+        self._screen = self._window.get_surface()
         self._ui.resize(w, h)
 
     def _paint_if_dragging(self) -> None:

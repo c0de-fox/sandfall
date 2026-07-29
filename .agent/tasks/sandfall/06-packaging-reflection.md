@@ -155,6 +155,47 @@ tagged release, not for v1 verification.
   thing the frozen binary adds is the PyInstaller bootloader + bundled
   data, which `ls`/build-log confirm are present and correctly structured.
 
+## Post-build fix (orchestrator) — THE critical PyInstaller gotcha
+
+The orchestrator ran `SANDFALL_FRAMES=60 ./dist/sandfall` (the step this
+agent could not perform) and **the binary crashed on startup**:
+
+```
+File "__main__.py", line 13, in main
+ImportError: attempted relative import with no known parent package
+[PYI-...:ERROR] Failed to execute script '__main__' due to unhandled exception!
+```
+
+**Root cause:** `src/sandfall/__main__.py` used a *relative* import
+(`from .game import Game`). When PyInstaller runs the entry script it
+becomes the top-level `__main__` module, which has **no parent package**
+(`__package__` is empty), so the relative import has nothing to resolve
+against. The unfrozen code path never hit this because `python -m sandfall`,
+the console script, and the in-process pytest smoke all import
+`__main__.py` *as part of the `sandfall` package* (so `__package__ ==
+'sandfall'`). Only the frozen bootloader runs it package-less.
+
+**Fix (one line, applied by the orchestrator):** change the import in
+`__main__.py` to **absolute** — `from sandfall.game import Game`. This
+resolves correctly in all three contexts (`python -m sandfall`, the
+console script, and the frozen binary) because the `sandfall` package is
+always present on `sys.path` (editable install in dev; bundled in the
+PYZ archive when frozen). Rebuilt; binary now exits 0 cleanly on both the
+real display and `SDL_VIDEODRIVER=dummy`.
+
+**Lesson for any future packaging phase / agent (capture globally):**
+> A package's `__main__.py` MUST use absolute imports (`from pkg.x import y`),
+> never relative (`from .x import y`), if it is also used as a PyInstaller
+> entry script. The frozen bootloader runs the entry as a package-less
+> top-level `__main__`, which breaks relative imports. This failure is
+> invisible until you actually *execute* the built binary — the dev path
+> (`-m`, console script) always works. Therefore: **executing the built
+> binary is a mandatory verification gate**, not optional, for any
+> PyInstaller phase.
+
+This also validates why the task split the build (agent) from the
+binary-execution check (orchestrator): the bug only surfaced at runtime.
+
 ## Difficult / unexpected
 
 1. **`block_cipher` deprecation.** The phase file's snippet passed

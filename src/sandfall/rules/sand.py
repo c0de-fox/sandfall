@@ -13,21 +13,9 @@ from __future__ import annotations
 
 import random
 
-from ..elements import ELEMENTS, ElementId, Phase
+from ..elements import ElementId
 from ..grid import Grid
-
-
-def _can_displace(target_id: int) -> bool:
-    """True if sand may move *into* a cell currently holding ``target_id``.
-
-    Sand may move into EMPTY, or into a lower-density LIQUID (sand sinks in
-    water). Full liquid behavior arrives in Phase 03; this seam is enough.
-    """
-    if target_id == ElementId.EMPTY:
-        return True
-    target = ELEMENTS[ElementId(target_id)]
-    sand = ELEMENTS[ElementId.SAND]
-    return target.phase == Phase.LIQUID and target.density < sand.density
+from ._common import can_displace, swap
 
 
 def update_sand(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
@@ -38,8 +26,8 @@ def update_sand(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     destination ``(x, y)`` or ``None`` if the cell did not move.
     """
     # Straight down.
-    if y + 1 < grid.height and _can_displace(grid.get(x, y + 1)):
-        _swap(grid, x, y, x, y + 1)
+    if y + 1 < grid.height and can_displace(ElementId.SAND, grid.get(x, y + 1)):
+        swap(grid, x, y, x, y + 1)
         return (x, y + 1)
 
     # Down-diagonals, randomized order.
@@ -48,16 +36,8 @@ def update_sand(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     for dx in directions:
         nx = x + dx
         ny = y + 1
-        if grid.in_bounds(nx, ny) and _can_displace(grid.get(nx, ny)):
-            _swap(grid, x, y, nx, ny)
+        if grid.in_bounds(nx, ny) and can_displace(ElementId.SAND, grid.get(nx, ny)):
+            swap(grid, x, y, nx, ny)
             return (nx, ny)
 
     return None
-
-
-def _swap(grid: Grid, x1: int, y1: int, x2: int, y2: int) -> None:
-    """Swap the contents of two in-bounds cells."""
-    a = grid.get(x1, y1)
-    b = grid.get(x2, y2)
-    grid.set(x1, y1, b)
-    grid.set(x2, y2, a)

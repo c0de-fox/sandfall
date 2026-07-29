@@ -130,16 +130,20 @@ def test_empty_grid_steps_without_error() -> None:
 
 
 def test_sand_sinks_through_water() -> None:
-    """Phase-03 liquid behavior is deferred, but the seam is here: sand
-    displaces lower-density liquids (water density 1.0 < sand density 1.5)."""
+    """Sand displaces lower-density liquids (water density 1.0 < sand 1.5).
+
+    Phase 03 gives water its own (flowing) rule, so to test the swap
+    invariant in isolation the water is trapped in a one-cell-wide column:
+    it cannot flee sideways, leaving displacement as its only exit.
+    """
     _seed()
-    grid = Grid(width=3, height=4)
-    grid.set(1, 3, ElementId.WATER)
-    grid.set(1, 2, ElementId.SAND)
+    grid = Grid(width=1, height=4)
+    grid.set(0, 3, ElementId.WATER)
+    grid.set(0, 2, ElementId.SAND)
     sim = Simulation(grid)
 
     sim.step()
 
     # Sand swaps with the water directly below it.
-    assert grid.get(1, 2) == ElementId.WATER
-    assert grid.get(1, 3) == ElementId.SAND
+    assert grid.get(0, 2) == ElementId.WATER
+    assert grid.get(0, 3) == ElementId.SAND

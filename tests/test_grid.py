@@ -118,3 +118,64 @@ def test_fill_circle_negative_radius_raises() -> None:
     grid = Grid(width=5, height=5)
     with pytest.raises(ValueError):
         grid.fill_circle(2, 2, -1, ElementId.SAND)
+
+
+def test_life_array_defaults_to_zero() -> None:
+    grid = Grid(width=4, height=4)
+    assert grid.life.shape == (4, 4)
+    assert grid.life.dtype == np.uint8
+    for y in range(grid.height):
+        for x in range(grid.width):
+            assert grid.get_life(x, y) == 0
+
+
+def test_set_life_get_life_round_trip() -> None:
+    grid = Grid(width=3, height=3)
+    grid.set_life(1, 1, 42)
+    assert grid.get_life(1, 1) == 42
+    # Other cells still zero.
+    assert grid.get_life(0, 0) == 0
+
+
+def test_set_life_clips_to_uint8_range() -> None:
+    grid = Grid(width=3, height=3)
+    grid.set_life(0, 0, -5)
+    assert grid.get_life(0, 0) == 0
+    grid.set_life(0, 0, 999)
+    assert grid.get_life(0, 0) == 255
+
+
+def test_set_life_out_of_bounds_is_silent() -> None:
+    grid = Grid(width=3, height=3)
+    # None of these should raise.
+    grid.set_life(-1, 0, 10)
+    grid.set_life(0, 5, 10)
+    grid.set_life(3, 3, 10)
+
+
+def test_get_life_out_of_bounds_raises() -> None:
+    grid = Grid(width=3, height=3)
+    with pytest.raises(IndexError):
+        grid.get_life(-1, 0)
+    with pytest.raises(IndexError):
+        grid.get_life(3, 0)
+
+
+def test_set_does_not_touch_life() -> None:
+    """``set`` updates only the element id; life is managed separately."""
+    grid = Grid(width=3, height=3)
+    grid.set_life(1, 1, 30)
+    grid.set(1, 1, ElementId.FIRE)
+    assert grid.get(1, 1) == ElementId.FIRE
+    # set() must not have clobbered the life value.
+    assert grid.get_life(1, 1) == 30
+
+
+def test_fill_circle_resets_life() -> None:
+    """Painting over a cell with life zeroes its life (no stale state)."""
+    grid = Grid(width=5, height=5)
+    grid.set(2, 2, ElementId.FIRE)
+    grid.set_life(2, 2, 50)
+    grid.fill_circle(2, 2, 0, ElementId.SAND)
+    assert grid.get(2, 2) == ElementId.SAND
+    assert grid.get_life(2, 2) == 0

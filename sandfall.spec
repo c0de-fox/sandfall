@@ -9,9 +9,11 @@
 #     PYZ + a.scripts + a.binaries + a.datas. There is intentionally no
 #     COLLECT block -- adding one would turn this into a --onedir build
 #     (a directory of loose files) instead of a single executable.
-#   - console=True so any startup traceback is visible on stderr (helpful
-#     while verifying the build). Flip to console=False for a release GUI
-#     build on Linux (no terminal window pops up).
+#   - console / disable_windowed_traceback are driven by the SANDFALL_RELEASE
+#     env var (see the release block below): dev builds attach a console so
+#     any startup traceback is visible on stderr; release builds
+#     (SANDFALL_RELEASE=1) detach it so no terminal window pops up and no
+#     windowed-traceback dialog leaks internal paths. See SECURITY.md.
 #   - block_cipher is intentionally omitted: PyInstaller >= 6.0 deprecated
 #     it and passing cipher=... emits a DeprecationWarning. Omitting it is
 #     the clean fix (we are not relying on bytecode encryption anyway).
@@ -32,6 +34,19 @@ from PyInstaller.utils.hooks import collect_all
 # Each collect_all() returns (datas, binaries, hiddenimports) for that package.
 pg_datas, pg_binaries, pg_hidden = collect_all("pygame")
 np_datas, np_binaries, np_hidden = collect_all("numpy")
+
+# --- Release vs development build -------------------------------------------
+# A RELEASE build must not attach a console window or pop a windowed-traceback
+# dialog (both can leak internal file paths / tracebacks to end users -- see
+# SECURITY.md and audit finding L2 / CWE-209). Build a release binary with:
+#   SANDFALL_RELEASE=1 uv run pyinstaller sandfall.spec --noconfirm
+# Dev builds (env unset) keep a console attached so startup tracebacks are
+# visible on stderr while iterating on the build.
+import os
+
+_IS_RELEASE = os.environ.get("SANDFALL_RELEASE", "") == "1"
+console = not _IS_RELEASE                 # dev: True | release: False
+disable_windowed_traceback = _IS_RELEASE  # dev: False | release: True
 
 a = Analysis(
     ["src/sandfall/__main__.py"],
@@ -61,8 +76,8 @@ exe = EXE(
     upx=True,  # compress the single file; harmless no-op if UPX is absent
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,  # flip to False for a release GUI build
-    disable_windowed_traceback=False,
+    console=console,  # dev: True (tracebacks visible) | release: False
+    disable_windowed_traceback=disable_windowed_traceback,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,

@@ -31,3 +31,27 @@ def test_spec_collects_pygame_and_numpy() -> None:
     # belt-and-suspenders: pulls data + binaries + hidden imports for both
     assert 'collect_all("pygame")' in text
     assert 'collect_all("numpy")' in text
+
+
+def test_spec_release_mode_suppresses_console_and_traceback() -> None:
+    """Release builds must not attach a console window or pop a traceback
+    dialog (SECURITY.md / audit finding L2, CWE-209). Dev builds keep both
+    visible so startup tracebacks are easy to see while iterating.
+
+    The ``console`` and ``disable_windowed_traceback`` EXE() options are
+    driven by the ``SANDFALL_RELEASE`` env var (a release binary is produced
+    with ``SANDFALL_RELEASE=1 uv run pyinstaller sandfall.spec``) so a release
+    build never needs the spec edited by hand. This test guards against an
+    accidental regression to a hardcoded ``console=True`` debug build.
+    """
+    text = Path("sandfall.spec").read_text()
+    compact = text.replace(" ", "")
+
+    # The env-var mechanism must be present.
+    assert "SANDFALL_RELEASE" in text
+    # No hardcoded console literal anywhere in the spec.
+    assert "console=True" not in text
+    assert "console=False" not in text
+    # Both EXE() options must reference the derived variables, not literals.
+    assert "console=console" in compact
+    assert "disable_windowed_traceback=disable_windowed_traceback" in compact

@@ -40,13 +40,12 @@ SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
 GRID_WIDTH = INITIAL_WINDOW_W // CELL_SIZE  # 800 // 4 == 200  (initial cols)
 GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140  (initial rows)
 
-# Minimum window size used to DERIVE the minimum grid cell counts below. Width
-# must fit the whole palette (8 swatches incl. the Eraser: 8*24 + 7*4 + 2*8 ==
-# 236px) with margin -> 256. Height must fit the 40px palette + a usable sim
-# area (>= 40 cells == 160px) -> 200. The window itself is NOT clamped to these
-# (clamping the window pixels fights the compositor on Wayland -- see
-# Game._handle_resize); instead compute_grid_dims floor-clamps the GRID cols/
-# rows to MIN_GRID_* so a tiny window still has a usable grid.
+# Minimum window size. Width must fit the whole palette (8 swatches incl. the
+# Eraser: 8*24 + 7*4 + 2*8 == 236px) with margin -> 256. Height must fit the
+# 40px palette + a usable sim area (>= 40 cells == 160px) -> 200. The minimum
+# is enforced by the compositor via ``Window.minimum_size`` (see Game.__init__);
+# compute_grid_dims additionally floor-clamps the GRID cols/rows to MIN_GRID_*
+# so a tiny window still has a usable grid.
 MIN_WINDOW_W = 256
 MIN_WINDOW_H = 200
 MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 256 // 4 == 64
@@ -111,7 +110,8 @@ def compute_grid_dims(window_w: int, window_h: int) -> tuple[int, int]:
     grid and the palette always fits.
 
     Pure / pygame-free -> unit-tested headlessly. Called by ``Game`` on the
-    initial window and on every ``VIDEORESIZE``.
+    initial window and whenever a window-size change is detected (polled once
+    per frame against ``Window.size``).
     """
     cols = max(MIN_GRID_COLS, window_w // CELL_SIZE)
     rows = max(MIN_GRID_ROWS, (window_h - PALETTE_BAR_HEIGHT) // CELL_SIZE)

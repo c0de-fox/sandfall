@@ -20,7 +20,7 @@ A testing seam: when the ``SANDFALL_FRAMES`` environment variable is set to a
 positive integer, the loop runs exactly that many frames and then exits
 cleanly (returns 0). This lets automated checks run the full SDL init ->
 render -> step -> teardown path without a human driving the window. It is read
-once at the start of :meth:`run.
+once at the start of :meth:`run`.
 """
 
 from __future__ import annotations

@@ -40,8 +40,6 @@ from .config import (
     GRID_WIDTH,
     INITIAL_WINDOW_H,
     INITIAL_WINDOW_W,
-    MIN_WINDOW_H,
-    MIN_WINDOW_W,
     clamp_brush_radius,
     compute_grid_dims,
 )
@@ -168,26 +166,34 @@ class Game:
                 self._handle_resize(event.w, event.h)
 
     def _handle_resize(self, raw_w: int, raw_h: int) -> None:
-        """Recompute grid + UI for a resized window, preserving the overlap.
+        """Acknowledge a window resize and rebuild the grid + UI to match.
 
-        Cells stay square (floor snap); leftover pixels are BG_COLOR. The
-        palette bar stays a fixed ``PALETTE_BAR_HEIGHT`` pinned to the bottom.
-        Content outside the overlapping region is lost permanently (see
-        :func:`migrate_grid`). The window is clamped to the minimum size so
-        an aggressively shrunk window still has a usable grid + palette.
+        Accepts the compositor's configured size **verbatim** -- on Wayland the
+        app must never request a different size (e.g. clamp to a minimum) or
+        the compositor fights back and the window flickers / snaps instead of
+        resizing. The grid's minimum cell count is enforced separately by
+        :func:`compute_grid_dims`, so an aggressively small window still gets a
+        usable grid while the window itself stays exactly what the user
+        dragged. Cells stay square (floor snap); leftover pixels are
+        ``BG_COLOR``. The palette bar stays a fixed ``PALETTE_BAR_HEIGHT``
+        pinned to the bottom. Content outside the overlapping region is lost
+        permanently (see :func:`migrate_grid`).
         """
-        w = max(MIN_WINDOW_W, raw_w)
-        h = max(MIN_WINDOW_H, raw_h)
+        # No-op if nothing changed (also skips a redundant set_mode call).
+        if (raw_w, raw_h) == (self._window_w, self._window_h):
+            return
+        w, h = raw_w, raw_h
         cols, rows = compute_grid_dims(w, h)
         new_grid = Grid(cols, rows)
         migrate_grid(self._grid, new_grid)
         self._grid = new_grid
         self._sim = Simulation(self._grid)
         self._window_w, self._window_h = w, h
-        # Re-call set_mode with RESIZABLE to refresh the screen surface to the
-        # new size (the documented pygame pattern on VIDEORESIZE). On the
-        # dummy SDL driver this may emit a benign warning; on a real display
-        # it is the canonical way to acknowledge a resize.
+        # Acknowledge the new size with the EXACT event pixels so the display
+        # surface matches. Passing the exact size -- never a clamped/snapped
+        # value -- is what keeps Wayland compositors from re-fighting the
+        # resize (and we additionally prefer the X11 driver at startup on
+        # Linux; see sandfall.__main__).
         self._screen = pygame.display.set_mode((w, h), pygame.RESIZABLE)
         self._ui.resize(w, h)
 

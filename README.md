@@ -26,7 +26,9 @@ Seven elements, each with its own physics and interactions:
 The simulation runs at a fixed 60 FPS over a 200 x 140 grid — an 800 x 560
 playfield (an 800 x 600 window with a 40px palette bar at the bottom and
 4 x 4 pixel cells). Elements pile up on top of the palette bar, which acts
-as the simulation floor.
+as the simulation floor. The window is **resizable**: drag the border and
+the grid grows or shrinks in whole 4px cells (the 200 x 140 default is just
+the starting size).
 
 ## Controls
 
@@ -37,6 +39,7 @@ as the simulation floor.
 | **Click a palette swatch** | Select that element. |
 | **Eraser swatch** | Select the Eraser (rightmost swatch) so left-drag erases instead of painting. |
 | **Mouse wheel** | Grow / shrink the brush radius (range 1–20). Scroll up to grow. |
+| **Resize window** | Drag the window border to resize the playfield. The grid grows/shrinks in whole 4px cells; content outside the new area is **lost permanently** (only the top-left overlap is preserved). The 40px palette bar stays pinned to the bottom; an enforced minimum size keeps the palette usable. |
 | **Space** | Pause / resume the simulation. |
 | **N** | Advance exactly one step while paused (no-op while running). |
 | **Esc / close window** | Quit. |

@@ -13,7 +13,7 @@ pygame calls, so these tests run completely headless.
 
 from __future__ import annotations
 
-from sandfall.config import WINDOW_HEIGHT, WINDOW_WIDTH
+from sandfall.config import INITIAL_WINDOW_H, INITIAL_WINDOW_W
 from sandfall.elements import ElementId
 from sandfall.ui import PALETTE_BAR_HEIGHT, UI, Swatch, palette_layout
 
@@ -23,7 +23,7 @@ def _non_empty_element_ids() -> list[ElementId]:
 
 
 def test_palette_layout_one_swatch_per_element_plus_eraser() -> None:
-    swatches = palette_layout(WINDOW_WIDTH, WINDOW_HEIGHT - PALETTE_BAR_HEIGHT)
+    swatches = palette_layout(INITIAL_WINDOW_W, INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT)
 
     # One swatch per ElementId member: 7 real elements + 1 Eraser (EMPTY).
     assert len(swatches) == len(ElementId)
@@ -33,7 +33,7 @@ def test_palette_layout_one_swatch_per_element_plus_eraser() -> None:
 
 
 def test_palette_layout_left_to_right_in_enum_order() -> None:
-    swatches = palette_layout(WINDOW_WIDTH, WINDOW_HEIGHT - PALETTE_BAR_HEIGHT)
+    swatches = palette_layout(INITIAL_WINDOW_W, INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT)
 
     # Real elements appear in ElementId ascending order, then the Eraser
     # (EMPTY) appended last.
@@ -50,7 +50,7 @@ def test_palette_layout_left_to_right_in_enum_order() -> None:
 
 
 def test_palette_layout_uses_configured_swatch_size() -> None:
-    swatches = palette_layout(WINDOW_WIDTH, WINDOW_HEIGHT - PALETTE_BAR_HEIGHT)
+    swatches = palette_layout(INITIAL_WINDOW_W, INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT)
 
     for s in swatches:
         assert s.w == s.h == swatches[0].w
@@ -68,7 +68,7 @@ def test_swatch_contains_is_inclusive_top_left_exclusive_bottom_right() -> None:
 
 
 def test_ui_swatch_at_returns_correct_element() -> None:
-    ui = UI(WINDOW_WIDTH, WINDOW_HEIGHT)
+    ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
 
     for s in ui.swatches:
         # The swatch's center pixel must map back to its own element id.
@@ -78,7 +78,7 @@ def test_ui_swatch_at_returns_correct_element() -> None:
 
 
 def test_ui_swatch_at_returns_none_outside_swatches() -> None:
-    ui = UI(WINDOW_WIDTH, WINDOW_HEIGHT)
+    ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
 
     # A point in the gap between the first two swatches hits nothing.
     first = ui.swatches[0]
@@ -88,7 +88,7 @@ def test_ui_swatch_at_returns_none_outside_swatches() -> None:
     assert ui.swatch_at(gap_x, first.y + first.h // 2) is None
 
     # A point well inside the playfield (above the palette) hits nothing.
-    assert ui.swatch_at(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2) is None
+    assert ui.swatch_at(INITIAL_WINDOW_W // 2, INITIAL_WINDOW_H // 2) is None
 
     # A point in the palette strip but off to the right of all swatches.
     last = ui.swatches[-1]
@@ -96,30 +96,30 @@ def test_ui_swatch_at_returns_none_outside_swatches() -> None:
 
 
 def test_ui_reserved_area_covers_only_the_bottom_strip() -> None:
-    ui = UI(WINDOW_WIDTH, WINDOW_HEIGHT)
+    ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
 
     # Just above the strip -> not reserved.
     assert not ui.in_reserved_area(0, ui.bar_y - 1)
-    assert not ui.in_reserved_area(WINDOW_WIDTH // 2, 0)
+    assert not ui.in_reserved_area(INITIAL_WINDOW_W // 2, 0)
     # Inside the strip (at and below bar_y) -> reserved.
     assert ui.in_reserved_area(0, ui.bar_y)
-    assert ui.in_reserved_area(WINDOW_WIDTH // 2, WINDOW_HEIGHT - 1)
+    assert ui.in_reserved_area(INITIAL_WINDOW_W // 2, INITIAL_WINDOW_H - 1)
 
 
 def test_palette_strip_lies_within_the_window() -> None:
-    ui = UI(WINDOW_WIDTH, WINDOW_HEIGHT)
+    ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
 
-    assert ui.bar_y == WINDOW_HEIGHT - PALETTE_BAR_HEIGHT
+    assert ui.bar_y == INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT
     for s in ui.swatches:
         assert 0 <= s.x
-        assert s.x + s.w <= WINDOW_WIDTH
+        assert s.x + s.w <= INITIAL_WINDOW_W
         assert 0 <= s.y
-        assert s.y + s.h <= WINDOW_HEIGHT
+        assert s.y + s.h <= INITIAL_WINDOW_H
 
 
 def test_palette_layout_includes_exactly_one_eraser_appended_last() -> None:
     """The Eraser (ElementId.EMPTY) appears exactly once, at the right end."""
-    swatches = palette_layout(WINDOW_WIDTH, WINDOW_HEIGHT - PALETTE_BAR_HEIGHT)
+    swatches = palette_layout(INITIAL_WINDOW_W, INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT)
 
     erasers = [s for s in swatches if s.element_id == ElementId.EMPTY]
     assert len(erasers) == 1
@@ -129,7 +129,7 @@ def test_palette_layout_includes_exactly_one_eraser_appended_last() -> None:
 
 def test_swatch_at_on_eraser_returns_empty() -> None:
     """Clicking the Eraser swatch selects EMPTY so left-drag erases too."""
-    ui = UI(WINDOW_WIDTH, WINDOW_HEIGHT)
+    ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
     eraser = [s for s in ui.swatches if s.element_id == ElementId.EMPTY][0]
     cx = eraser.x + eraser.w // 2
     cy = eraser.y + eraser.h // 2
@@ -140,7 +140,7 @@ def test_swatch_at_on_eraser_returns_empty() -> None:
 def test_grid_height_makes_palette_top_the_sim_floor() -> None:
     """The grid's bottom pixel row lands exactly on the palette's top edge.
 
-    GRID_HEIGHT * CELL_SIZE == WINDOW_HEIGHT - PALETTE_BAR_HEIGHT, so the
+    GRID_HEIGHT * CELL_SIZE == INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT, so the
     grid spans only the area above the palette (elements pile ON the bar).
     This is the core geometry invariant for Phase 02; it is what guarantees
     ``UI.bar_y == 560`` lines up with the grid's bottom row.
@@ -150,8 +150,32 @@ def test_grid_height_makes_palette_top_the_sim_floor() -> None:
     # The grid's pixel height equals the simulation area height (no leftover).
     assert GRID_HEIGHT * CELL_SIZE == SIM_AREA_HEIGHT
     # ...and the simulation area is exactly the window minus the palette strip.
-    assert GRID_HEIGHT * CELL_SIZE == WINDOW_HEIGHT - PALETTE_BAR_HEIGHT
+    assert GRID_HEIGHT * CELL_SIZE == INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT
     # At the default 800x600 window + 40px palette bar this is 560 px, which
     # also equals UI.bar_y (the palette's top edge) — so the grid's bottom
     # row rests on the palette's top.
     assert GRID_HEIGHT * CELL_SIZE == 560
+
+
+def test_ui_resize_recomputes_bar_y_and_swatches() -> None:
+    """UI.resize recomputes bar_y/swatch positions for the new window size.
+
+    This is the headless contract for Phase 03's resizable-window support:
+    after resize, the palette stays pinned to the bottom (bar_y tracks the
+    new window height) and every swatch sits inside the new palette strip.
+    """
+    ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
+    initial_bar_y = ui.bar_y
+    assert initial_bar_y == INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT
+
+    new_w, new_h = INITIAL_WINDOW_W, INITIAL_WINDOW_H + 80
+    ui.resize(new_w, new_h)
+
+    # bar_y moved down with the taller window; palette still pinned to bottom.
+    assert ui.bar_y == new_h - PALETTE_BAR_HEIGHT
+    assert ui.bar_y == initial_bar_y + 80
+    # Every swatch lies inside the new palette strip (y >= new bar_y, below
+    # the new window's bottom edge).
+    for s in ui.swatches:
+        assert s.y >= ui.bar_y
+        assert s.y + s.h <= new_h

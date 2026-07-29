@@ -69,6 +69,10 @@ class Renderer:
 
     def render(self, grid: Grid) -> pygame.Surface:
         """Paint ``grid`` onto the grid-sized cell surface and return it."""
+        # Reallocate if the grid size changed (e.g. after a window resize) so
+        # surfarray.blit_array never sees a size mismatch.
+        if self._cell_surface.get_size() != (grid.width, grid.height):
+            self._cell_surface = pygame.Surface((grid.width, grid.height))
         rgb = grid_to_rgb(grid, self._lut)  # (H, W, 3)
         # pygame.surfarray works in (width, height, 3) column-major order, so
         # transpose the row-major grid image before blitting.

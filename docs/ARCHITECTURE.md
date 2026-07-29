@@ -64,13 +64,18 @@ Conventions:
 ### Geometry: the palette bar is the simulation floor
 
 The grid does **not** fill the whole window. It spans only the pixels above
-the 40px palette bar (`SIM_AREA_HEIGHT = WINDOW_HEIGHT - PALETTE_BAR_HEIGHT`
-= 560), so `GRID_HEIGHT * CELL_SIZE == WINDOW_HEIGHT - PALETTE_BAR_HEIGHT`
-exactly. The grid's bottom pixel row lands on the palette's top edge, which
-means falling elements pile *on* the bar instead of falling behind it.
-`UI.bar_y` (`== WINDOW_HEIGHT - PALETTE_BAR_HEIGHT == 560`) is the same
+the 40px palette bar (`SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT`
+= 560), so at the default window size
+`GRID_HEIGHT * CELL_SIZE == INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT` exactly.
+The grid's bottom pixel row lands on the palette's top edge, which means
+falling elements pile *on* the bar instead of falling behind it.
+`UI.bar_y` (`== INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT == 560`) is the same
 value, so painting is suppressed exactly where the palette begins and mouse
 coordinates map cleanly via `mx // CELL_SIZE, my // CELL_SIZE`.
+
+The window is **resizable**, so the *initial* constants above are just the
+starting size; the current grid dims come from `compute_grid_dims` (see
+[Window resizing](#window-resizing) below).
 
 ### The scan: `Simulation.step`
 
@@ -180,15 +185,55 @@ not displacable.
    no Python-level loops.
 3. The image is transposed to pygame's column-major `(W, H, 3)` order and
    pushed onto a grid-sized `Surface` via `pygame.surfarray.blit_array`.
-4. `Game._draw` scales that 200 x 140 surface up to the 800 x 560 playfield
-   (the 800 x 600 window minus the 40px palette bar) with
-   `pygame.transform.scale` (nearest-neighbor, so the pixel look stays
-   crisp), then blits the UI on top. The palette bar is then drawn over the
-   bottom 40px — it is the simulation floor, so elements pile on it instead
-   of falling behind it.
+   `render` is **self-healing against resize**: if `_cell_surface`'s size
+   differs from the grid's (the window was just resized), it reallocates the
+   surface first so `blit_array` never sees a size mismatch. A single
+   `Renderer` therefore serves any grid shape across the program's lifetime.
+4. `Game._draw` scales that `(grid.width x grid.height)` surface up to
+   `(grid.width * CELL_SIZE, grid.height * CELL_SIZE)` — the grid's whole-cell
+   pixel size — with `pygame.transform.scale` (nearest-neighbor, so the pixel
+   look stays crisp), then blits the UI on top. The screen is cleared to
+   `BG_COLOR` first, so any leftover pixels (a window that isn't an exact
+   whole-cell multiple, or the area below the scaled grid) show the
+   background. The palette bar is then drawn over the bottom 40px — it is the
+   simulation floor, so elements pile on it instead of falling behind it.
 
 The LUT builder and the id -> RGB mapper are split out as pure numpy
 functions so the color mapping is unit-testable without a display.
+
+## Window resizing
+
+The window opens with `pygame.RESIZABLE`. Dragging the border fires
+`pygame.VIDEORESIZE`, which `Game._handle_resize` turns into a full scene
+rebuild:
+
+1. **Clamp** the requested `(w, h)` up to `MIN_WINDOW_W` x `MIN_WINDOW_H`
+   (256 x 200) so the palette (8 swatches incl. the Eraser = 236px) always
+   fits and the sim area stays usable.
+2. **Recompute grid dims** via `compute_grid_dims(w, h)` (pure, headless-tested
+   in `tests/test_config.py`). Cells stay square at `CELL_SIZE`: cols/rows are
+   floor-divided so the grid is the largest whole-cell multiple that fits;
+   leftover pixels become `BG_COLOR`. Rows exclude the 40px palette bar.
+3. **Migrate content** via `migrate_grid(old, new)` (pure, headless-tested in
+   `tests/test_grid.py`): the `min(old, new) x min(old, new)` overlap of
+   *both* the element-id array and the life array is copied from the old grid
+   into the new one. Old content outside the overlap is **cropped and lost
+   permanently**; newly exposed cells stay at their default (EMPTY / life 0).
+4. **Rebuild** the `Simulation` (its `moved` guard references the old grid's
+   shape), refresh the screen surface with a second
+   `display.set_mode((w, h), pygame.RESIZABLE)` (the documented pygame pattern
+   on `VIDEORESIZE`), and call `UI.resize(w, h)` to recompute `bar_y`,
+   re-layout swatches, and invalidate the cached palette-bar surface so it
+   redraws at the new width.
+
+The palette bar stays a fixed `PALETTE_BAR_HEIGHT` pinned to the bottom at
+every size; `UI.in_reserved_area` and the mouse-mapping (`mx // CELL_SIZE,
+my // CELL_SIZE`) both read the current `bar_y` so painting is suppressed
+exactly where the palette begins regardless of the current window size.
+
+`INITIAL_WINDOW_W` / `INITIAL_WINDOW_H` in `config.py` are the *starting*
+window size (800 x 600); the *current* size lives as `Game` instance state
+(`_window_w`, `_window_h`) and changes on every resize.
 
 ## The `SANDFALL_FRAMES` testing seam
 

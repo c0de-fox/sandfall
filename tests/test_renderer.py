@@ -93,3 +93,41 @@ def test_renderer_render_returns_grid_sized_surface() -> None:
     surface = renderer.render(grid)
 
     assert surface.get_size() == (GRID_WIDTH, GRID_HEIGHT)
+
+
+def test_renderer_render_self_heals_on_grid_resize() -> None:
+    """A renderer constructed at the default size re-renders a resized grid.
+
+    Phase 03 makes the grid resizable at runtime. ``Renderer._cell_surface``
+    is sized at construction; if it were never reallocated, a later call
+    with a differently-sized grid would crash inside
+    ``pygame.surfarray.blit_array`` (size mismatch). ``render`` detects the
+    mismatch and rebuilds the surface, so a single Renderer instance serves
+    any grid shape.
+    """
+    import pygame
+
+    # Build a renderer; its _cell_surface starts at the default grid size.
+    renderer = Renderer()
+    assert renderer._cell_surface.get_size() == (GRID_WIDTH, GRID_HEIGHT)
+
+    # Render a smaller grid: surface must shrink to match, no exception.
+    small = Grid(10, 6)
+    small.set(0, 0, ElementId.SAND)
+    surf_small = renderer.render(small)
+    assert surf_small.get_size() == (10, 6)
+
+    # Render a larger grid: surface must grow to match, no exception.
+    big = Grid(GRID_WIDTH + 50, GRID_HEIGHT + 20)
+    big.set(0, 0, ElementId.WATER)
+    surf_big = renderer.render(big)
+    assert surf_big.get_size() == (GRID_WIDTH + 50, GRID_HEIGHT + 20)
+
+    # Render the default size again: must shrink back. Also smoke-check that
+    # the surface actually carries the painted color (column-major pixel at
+    # (0,0)).
+    grid = Grid(GRID_WIDTH, GRID_HEIGHT)
+    grid.set(0, 0, ElementId.SAND)
+    surf = renderer.render(grid)
+    assert surf.get_size() == (GRID_WIDTH, GRID_HEIGHT)
+    assert tuple(pygame.surfarray.array3d(surf)[0, 0]) == ELEMENTS[ElementId.SAND].color

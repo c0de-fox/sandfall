@@ -10,13 +10,16 @@ from .elements import ElementId
 
 # --- Window / grid geometry -------------------------------------------------
 # All pixel/cell geometry derives from a small chain of constants here so the
-# whole layout has a single source of truth. The simulation occupies only the
-# pixels ABOVE the palette bar (the palette is the sim floor, not an overlay):
-# the grid's bottom pixel row lands exactly on the palette's top edge so
-# elements pile ON the bar, never behind it. Changing CELL_SIZE here is the
-# single knob that trades resolution for performance.
-WINDOW_WIDTH = 800
-WINDOW_HEIGHT = 600
+# whole layout has a single source of truth. The window is RESIZABLE, so the
+# INITIAL_WINDOW_* constants below are only the *starting* size; the current
+# size lives as Game instance state and is converted to grid dims at runtime
+# by compute_grid_dims (see the bottom of this module). The simulation
+# occupies only the pixels ABOVE the palette bar (the palette is the sim
+# floor, not an overlay): the grid's bottom pixel row lands exactly on the
+# palette's top edge so elements pile ON the bar, never behind it. Changing
+# CELL_SIZE here is the single knob that trades resolution for performance.
+INITIAL_WINDOW_W = 800  # starting window width (the window is resizable)
+INITIAL_WINDOW_H = 600  # starting window height (the window is resizable)
 CELL_SIZE = 4  # pixels per side of one simulation cell
 
 # Palette bar geometry (size of the reserved bottom strip drawn by the UI).
@@ -29,13 +32,22 @@ PALETTE_MARGIN = 8  # px margin around the palette strip / swatches
 # (not ui.py) so the grid geometry below can derive from it in one place.
 PALETTE_BAR_HEIGHT = PALETTE_SWATCH + 2 * PALETTE_MARGIN  # 24 + 16 == 40
 
-# The simulation occupies only the pixels ABOVE the palette bar. The grid's
-# bottom pixel row lands exactly on the palette's top edge (== 560 at the
-# default 800x600 window) so falling elements rest on top of the bar.
-SIM_AREA_HEIGHT = WINDOW_HEIGHT - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
+# The simulation occupies only the pixels ABOVE the palette bar. At the
+# default 800x600 window the grid's bottom pixel row lands exactly on the
+# palette's top edge (== 560) so falling elements rest on top of the bar.
+SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
 
-GRID_WIDTH = WINDOW_WIDTH // CELL_SIZE  # 800 // 4 == 200
-GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140
+GRID_WIDTH = INITIAL_WINDOW_W // CELL_SIZE  # 800 // 4 == 200  (initial cols)
+GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140  (initial rows)
+
+# Minimum resizable window size. Width must fit the whole palette (8 swatches
+# incl. the Eraser: 8*24 + 7*4 + 2*8 == 236px) with margin -> 256. Height
+# must fit the 40px palette + a usable sim area (>= 40 cells == 160px) -> 200.
+# VIDEORESIZE values below these are clamped up (see Game._handle_resize).
+MIN_WINDOW_W = 256
+MIN_WINDOW_H = 200
+MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 256 // 4 == 64
+MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 40
 
 # --- Loop -------------------------------------------------------------------
 FPS = 60
@@ -82,3 +94,22 @@ def clamp_brush_radius(radius: int) -> int:
     one definition of the bounds.
     """
     return max(BRUSH_MIN, min(BRUSH_MAX, radius))
+
+
+def compute_grid_dims(window_w: int, window_h: int) -> tuple[int, int]:
+    """Compute ``(cols, rows)`` for a window of the given pixel size.
+
+    Cells stay square at ``CELL_SIZE``: cols/rows are floor-divided so the
+    grid is the largest whole-cell multiple that fits; leftover pixels (when
+    the window isn't an exact multiple) are filled with ``BG_COLOR`` by the
+    renderer. Rows exclude the fixed palette bar pinned to the bottom.
+    Both dimensions are clamped to a minimum cell count (``MIN_GRID_COLS`` /
+    ``MIN_GRID_ROWS``) so an aggressively shrunk window still has a usable
+    grid and the palette always fits.
+
+    Pure / pygame-free -> unit-tested headlessly. Called by ``Game`` on the
+    initial window and on every ``VIDEORESIZE``.
+    """
+    cols = max(MIN_GRID_COLS, window_w // CELL_SIZE)
+    rows = max(MIN_GRID_ROWS, (window_h - PALETTE_BAR_HEIGHT) // CELL_SIZE)
+    return cols, rows

@@ -151,3 +151,23 @@ class Grid:
                 if dx * dx + dy * dy <= r2:
                     self._data[y, x] = eid
                     self._life[y, x] = 0
+
+
+def migrate_grid(old: Grid, new: Grid) -> None:
+    """Copy the overlapping region of ``old`` into ``new`` (ids AND life).
+
+    The copied region is ``min(old.width, new.width) x min(old.height,
+    new.height)``. Old content outside the overlap is cropped and lost
+    (permanent — there is no undo). Cells in ``new`` outside the overlap are
+    left untouched (they keep whatever they had before — typically the
+    default EMPTY / life 0). ``old`` is read-only here; ``new`` is mutated
+    in place.
+
+    Pure / pygame-free -> unit-tested headlessly. Used by ``Game`` on window
+    resize to preserve the player's scene.
+    """
+    w = min(old.width, new.width)
+    h = min(old.height, new.height)
+    if w > 0 and h > 0:
+        new._data[:h, :w] = old._data[:h, :w]
+        new._life[:h, :w] = old._life[:h, :w]

@@ -111,6 +111,19 @@ class UI:
         self._font = None
         self._bar_surf = None
 
+    def resize(self, window_width: int, window_height: int) -> None:
+        """Recompute layout for a new window size (called on VIDEORESIZE).
+
+        Resets the cached palette-bar surface so it is rebuilt at the new
+        width on the next draw (its width depends on ``window_width`` and
+        the old surface would otherwise be scaled/clipped incorrectly).
+        """
+        self._window_width = window_width
+        self._window_height = window_height
+        self._bar_y = window_height - PALETTE_BAR_HEIGHT
+        self._swatches = palette_layout(window_width, self._bar_y)
+        self._bar_surf = None
+
     @property
     def swatches(self) -> list[Swatch]:
         """The cached palette layout (read-only view)."""

@@ -38,14 +38,16 @@ from .config import (
     FPS,
     GRID_HEIGHT,
     GRID_WIDTH,
-    SIM_AREA_HEIGHT,
-    WINDOW_HEIGHT,
-    WINDOW_WIDTH,
+    INITIAL_WINDOW_H,
+    INITIAL_WINDOW_W,
+    MIN_WINDOW_H,
+    MIN_WINDOW_W,
     clamp_brush_radius,
+    compute_grid_dims,
 )
 from .control import LoopController
 from .elements import ElementId
-from .grid import Grid
+from .grid import Grid, migrate_grid
 from .renderer import Renderer
 from .simulation import Simulation
 from .ui import UI
@@ -83,20 +85,27 @@ class Game:
     selected_element: ElementId
     brush_radius: int
     _running: bool
+    # Current window size in pixels (starts at INITIAL_*; updated on resize).
+    _window_w: int
+    _window_h: int
 
     def __init__(self) -> None:
         pygame.init()
-        self._screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self._screen = pygame.display.set_mode(
+            (INITIAL_WINDOW_W, INITIAL_WINDOW_H), pygame.RESIZABLE
+        )
         pygame.display.set_caption("Sandfall")
         self._clock = pygame.time.Clock()
         self._grid = Grid(GRID_WIDTH, GRID_HEIGHT)
         self._sim = Simulation(self._grid)
         self._renderer = Renderer()
-        self._ui = UI(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self._ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
         self._loop = LoopController()
         self.selected_element = DEFAULT_ELEMENT
         self.brush_radius = DEFAULT_BRUSH_RADIUS
         self._running = False
+        self._window_w = INITIAL_WINDOW_W
+        self._window_h = INITIAL_WINDOW_H
 
     def run(self) -> int:
         """Run the main loop until QUIT/ESC or the ``SANDFALL_FRAMES`` cap.
@@ -153,6 +162,34 @@ class Game:
                 sel = self._ui.swatch_at(mx, my)
                 if sel is not None:
                     self.selected_element = sel
+            elif event.type == pygame.VIDEORESIZE:
+                # The OS/window manager reports the new pixel size; clamp and
+                # rebuild the grid + UI to match (see _handle_resize).
+                self._handle_resize(event.w, event.h)
+
+    def _handle_resize(self, raw_w: int, raw_h: int) -> None:
+        """Recompute grid + UI for a resized window, preserving the overlap.
+
+        Cells stay square (floor snap); leftover pixels are BG_COLOR. The
+        palette bar stays a fixed ``PALETTE_BAR_HEIGHT`` pinned to the bottom.
+        Content outside the overlapping region is lost permanently (see
+        :func:`migrate_grid`). The window is clamped to the minimum size so
+        an aggressively shrunk window still has a usable grid + palette.
+        """
+        w = max(MIN_WINDOW_W, raw_w)
+        h = max(MIN_WINDOW_H, raw_h)
+        cols, rows = compute_grid_dims(w, h)
+        new_grid = Grid(cols, rows)
+        migrate_grid(self._grid, new_grid)
+        self._grid = new_grid
+        self._sim = Simulation(self._grid)
+        self._window_w, self._window_h = w, h
+        # Re-call set_mode with RESIZABLE to refresh the screen surface to the
+        # new size (the documented pygame pattern on VIDEORESIZE). On the
+        # dummy SDL driver this may emit a benign warning; on a real display
+        # it is the canonical way to acknowledge a resize.
+        self._screen = pygame.display.set_mode((w, h), pygame.RESIZABLE)
+        self._ui.resize(w, h)
 
     def _paint_if_dragging(self) -> None:
         """Paint the selected element under the cursor while button 1 is held.
@@ -192,14 +229,16 @@ class Game:
         paint_brush(self._grid, gx, gy, self.brush_radius, ElementId.EMPTY)
 
     def _draw(self) -> None:
-        # The grid fills only the simulation area above the palette bar
-        # (GRID_WIDTH * CELL_SIZE == WINDOW_WIDTH, GRID_HEIGHT * CELL_SIZE ==
-        # SIM_AREA_HEIGHT); the fill is defensive against any future geometry
-        # mismatch and also paints the bottom PALETTE_BAR_HEIGHT strip before
-        # the UI overlays it.
+        # The grid renders to a (grid.width x grid.height) surface and is
+        # scaled up to the grid's whole-cell pixel size; the screen is first
+        # cleared to BG_COLOR so any leftover pixels (window not an exact
+        # whole-cell multiple, or below the scaled grid) show the background.
+        # After resize the grid dims derive from the current window size
+        # (compute_grid_dims), so this redraws the entire scene every frame.
         self._screen.fill(BG_COLOR)
         small = self._renderer.render(self._grid)
-        scaled = pygame.transform.scale(small, (WINDOW_WIDTH, SIM_AREA_HEIGHT))
+        target = (self._grid.width * CELL_SIZE, self._grid.height * CELL_SIZE)
+        scaled = pygame.transform.scale(small, target)
         self._screen.blit(scaled, (0, 0))
         self._ui.draw(
             self._screen,

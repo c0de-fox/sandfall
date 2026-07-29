@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from sandfall.elements import ElementId
-from sandfall.grid import Grid
+from sandfall.grid import Grid, migrate_grid
 
 
 def test_construction_and_shape() -> None:
@@ -179,3 +179,117 @@ def test_fill_circle_resets_life() -> None:
     grid.fill_circle(2, 2, 0, ElementId.SAND)
     assert grid.get(2, 2) == ElementId.SAND
     assert grid.get_life(2, 2) == 0
+
+
+# --- migrate_grid (Phase 03 resizable window) --------------------------------
+
+
+def test_migrate_grid_grow_preserves_overlap_ids_and_life() -> None:
+    """Growing the grid carries the overlap (ids + life) into the new grid."""
+    old = Grid(3, 3)
+    old.set(0, 0, ElementId.SAND)
+    old.set(2, 2, ElementId.FIRE)
+    old.set_life(2, 2, 77)
+    new = Grid(5, 5)
+    migrate_grid(old, new)
+    # Overlap preserved (ids + life).
+    assert new.get(0, 0) == ElementId.SAND
+    assert new.get(2, 2) == ElementId.FIRE
+    assert new.get_life(2, 2) == 77
+    # Newly exposed cells (outside the 3x3 overlap) keep their defaults.
+    assert new.get(4, 4) == ElementId.EMPTY
+    assert new.get_life(4, 4) == 0
+
+
+def test_migrate_grid_shrink_crops_overflow() -> None:
+    """Shrinking the grid drops old content outside the new (smaller) overlap."""
+    old = Grid(5, 5)
+    old.set(4, 4, ElementId.STONE)  # outside the 2x2 overlap -> lost
+    old.set(1, 1, ElementId.WATER)  # inside the 2x2 overlap -> kept
+    new = Grid(2, 2)
+    migrate_grid(old, new)
+    # (4,4) doesn't even exist in new (2x2); (0,0) inside overlap was EMPTY.
+    assert new.get(0, 0) == ElementId.EMPTY
+    assert new.get(1, 1) == ElementId.WATER
+
+
+def test_migrate_grid_shrink_carries_life_in_overlap() -> None:
+    """Life is carried for cells inside the overlap, dropped outside."""
+    old = Grid(4, 4)
+    old.set(1, 1, ElementId.FIRE)
+    old.set_life(1, 1, 42)
+    old.set(3, 3, ElementId.FIRE)  # outside the 2x2 overlap
+    old.set_life(3, 3, 99)
+    new = Grid(2, 2)
+    migrate_grid(old, new)
+    assert new.get(1, 1) == ElementId.FIRE
+    assert new.get_life(1, 1) == 42  # life carried in overlap
+
+
+def test_migrate_grid_new_outside_overlap_left_untouched() -> None:
+    """Cells in ``new`` outside the overlap are NOT overwritten by migration.
+
+    The contract is "copy the overlap, leave the rest of ``new`` alone" — so
+    a cell pre-populated outside the overlap survives the migration rather
+    than being reset to EMPTY. (In practice ``new`` starts all-EMPTY so this
+    is moot for the Game's resize path, but the contract is pinned here.)
+    """
+    old = Grid(2, 2)
+    new = Grid(4, 4)
+    new.set(3, 3, ElementId.PLANT)  # outside the 2x2 overlap
+    migrate_grid(old, new)
+    assert new.get(3, 3) == ElementId.PLANT  # untouched
+    assert new.get_life(3, 3) == 0
+
+
+def test_migrate_grid_does_not_mutate_old() -> None:
+    """``old`` is read-only: its contents survive the migration."""
+    old = Grid(3, 3)
+    old.set(0, 0, ElementId.SAND)
+    old.set_life(0, 0, 5)
+    new = Grid(3, 3)
+    migrate_grid(old, new)
+    assert old.get(0, 0) == ElementId.SAND
+    assert old.get_life(0, 0) == 5
+
+
+def test_migrate_grid_one_dim_grow_one_dim_shrink() -> None:
+    """Wider but shorter: overlap is min(5,3) x min(3,5) == 3 x 3."""
+    old = Grid(5, 3)
+    for x in range(5):
+        old.set(x, 0, ElementId.SAND)
+    old.set(4, 2, ElementId.STONE)  # x=4 is outside the new width of 3
+    new = Grid(3, 5)
+    migrate_grid(old, new)
+    # The 3x3 overlap was carried: x in [0,3), y in [0,3).
+    assert new.get(0, 0) == ElementId.SAND
+    assert new.get(2, 0) == ElementId.SAND
+    # x=4 is gone (new is only 3 wide); (3, 0) is outside overlap -> EMPTY.
+    assert new.get(0, 3) == ElementId.EMPTY  # y=3 outside old height 3
+    assert new.get(0, 4) == ElementId.EMPTY
+
+
+def test_migrate_grid_same_size_is_a_full_copy() -> None:
+    """When old and new are the same shape, the entire grid is copied."""
+    old = Grid(3, 3)
+    old.set(0, 0, ElementId.SAND)
+    old.set(2, 2, ElementId.FIRE)
+    old.set_life(2, 2, 12)
+    new = Grid(3, 3)
+    migrate_grid(old, new)
+    assert new.get(0, 0) == ElementId.SAND
+    assert new.get(2, 2) == ElementId.FIRE
+    assert new.get_life(2, 2) == 12
+
+
+def test_migrate_grid_empty_overlap_when_either_dim_is_zero() -> None:
+    """A zero-size grid has no overlap; migration is a no-op (and silent)."""
+    # Grid rejects zero dimensions, so the smallest case is 1x1 vs 1x1 with
+    # full overlap. The defensive guard `if w > 0 and h > 0` short-circuits
+    # only if min(...) is 0, which cannot happen with valid Grids; we still
+    # confirm a 1x1 -> 1x1 migrate copies the single cell.
+    old = Grid(1, 1)
+    old.set(0, 0, ElementId.WATER)
+    new = Grid(1, 1)
+    migrate_grid(old, new)
+    assert new.get(0, 0) == ElementId.WATER

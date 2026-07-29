@@ -203,28 +203,40 @@ functions so the color mapping is unit-testable without a display.
 
 ## Window resizing
 
-The window opens with `pygame.RESIZABLE`. Dragging the border fires
-`pygame.VIDEORESIZE`, which `Game._handle_resize` turns into a full scene
-rebuild:
+The display uses the **`pygame.Window` API** (pygame-ce ≥ 2.5.2), not the
+classic `pygame.display.set_mode`. The window is created **once** in
+`Game.__init__` with `pygame.Window("Sandfall", size=..., resizable=True)`;
+`Window.get_surface()` returns the render target and **auto-tracks the window
+size**, and `Window.flip()` presents it. This matters because
+`display.set_mode()` destroys and recreates the window on every call — calling
+it on each resize event flickered (the window disappeared/reappeared) on
+Wayland/X11 compositors. The `Window` API never recreates the window, so
+resizing is flicker-free and Wayland-native.
 
-1. **Clamp** the requested `(w, h)` up to `MIN_WINDOW_W` x `MIN_WINDOW_H`
-   (256 x 200) so the palette (8 swatches incl. the Eraser = 236px) always
-   fits and the sim area stays usable.
-2. **Recompute grid dims** via `compute_grid_dims(w, h)` (pure, headless-tested
+`Game._apply_resize_if_changed` runs once per frame and **polls
+`Window.size`** (robust across drivers/compositors, rather than relying on
+`VIDEORESIZE`/`WINDOWRESIZED` events). When the size has changed it rebuilds
+the scene without recreating the window:
+
+1. **Recompute grid dims** via `compute_grid_dims(w, h)` (pure, headless-tested
    in `tests/test_config.py`). Cells stay square at `CELL_SIZE`: cols/rows are
    floor-divided so the grid is the largest whole-cell multiple that fits;
    leftover pixels become `BG_COLOR`. Rows exclude the 40px palette bar.
-3. **Migrate content** via `migrate_grid(old, new)` (pure, headless-tested in
+2. **Migrate content** via `migrate_grid(old, new)` (pure, headless-tested in
    `tests/test_grid.py`): the `min(old, new) x min(old, new)` overlap of
    *both* the element-id array and the life array is copied from the old grid
    into the new one. Old content outside the overlap is **cropped and lost
    permanently**; newly exposed cells stay at their default (EMPTY / life 0).
-4. **Rebuild** the `Simulation` (its `moved` guard references the old grid's
-   shape), refresh the screen surface with a second
-   `display.set_mode((w, h), pygame.RESIZABLE)` (the documented pygame pattern
-   on `VIDEORESIZE`), and call `UI.resize(w, h)` to recompute `bar_y`,
-   re-layout swatches, and invalidate the cached palette-bar surface so it
-   redraws at the new width.
+3. **Rebuild** the `Simulation` (its `moved` guard references the old grid's
+   shape), refresh the screen-surface reference via `Window.get_surface()`
+   (it has auto-tracked to the new size), and call `UI.resize(w, h)` to recompute
+   `bar_y`, re-layout swatches, and invalidate the cached palette-bar surface so
+   it redraws at the new width.
+
+The minimum window size is enforced by the compositor via
+`Window.minimum_size = (MIN_WINDOW_W, MIN_WINDOW_H)` (256 x 200, set in
+`Game.__init__`); `compute_grid_dims` additionally floor-clamps the grid
+cols/rows to `MIN_GRID_*` so a too-small window still has a usable grid.
 
 The palette bar stays a fixed `PALETTE_BAR_HEIGHT` pinned to the bottom at
 every size; `UI.in_reserved_area` and the mouse-mapping (`mx // CELL_SIZE,
@@ -233,7 +245,7 @@ exactly where the palette begins regardless of the current window size.
 
 `INITIAL_WINDOW_W` / `INITIAL_WINDOW_H` in `config.py` are the *starting*
 window size (800 x 600); the *current* size lives as `Game` instance state
-(`_window_w`, `_window_h`) and changes on every resize.
+(`_window_w`, `_window_h`) and is updated by `_apply_resize_if_changed`.
 
 ## The `SANDFALL_FRAMES` testing seam
 

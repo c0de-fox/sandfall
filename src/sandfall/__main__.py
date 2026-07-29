@@ -6,9 +6,13 @@ __all__ = ["main"]
 def main() -> int:
     """Run the sandfall game.
 
-    Currently a stub; wired up in Phase 04.
+    The ``Game`` import is lazy so that merely importing this module (e.g.
+    from tests, where there may be no display) does not pull in pygame or open
+    a window.
     """
-    return 0
+    from .game import Game
+
+    return Game().run()
 
 
 if __name__ == "__main__":

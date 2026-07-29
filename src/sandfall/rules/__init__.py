@@ -17,6 +17,7 @@ from collections.abc import Callable
 
 from ..elements import ElementId
 from ..grid import Grid
+from ._common import seed_fire_life, seed_smoke_life
 from .fire import update_fire
 from .plant import update_plant
 from .sand import update_sand
@@ -28,6 +29,16 @@ from .wood import update_wood
 # A rule function returns the destination (x, y) it moved into, or None if it
 # did not move. See rules/sand.py for the full contract.
 UpdateFn = Callable[[Grid, int, int], "tuple[int, int] | None"]
+
+# ``seed_fire_life`` / ``seed_smoke_life`` are re-exported here so the painting
+# path (Phase 05 brush) and tests can import the canonical lifetime ranges from
+# a single stable location: ``from sandfall.rules import seed_fire_life``.
+__all__ = [
+    "RULES",
+    "UpdateFn",
+    "seed_fire_life",
+    "seed_smoke_life",
+]
 
 RULES: dict[ElementId, UpdateFn] = {
     ElementId.SAND: update_sand,

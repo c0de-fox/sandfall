@@ -32,3 +32,32 @@ DEFAULT_BRUSH_RADIUS = 3
 # so the simulation area visually blends with the surrounding window if the grid
 # ever fails to exactly fill it.
 BG_COLOR: tuple[int, int, int] = (10, 10, 14)
+
+# --- UI (Phase 05) ----------------------------------------------------------
+# Element palette lives in a reserved strip at the bottom of the window. The
+# strip is [PALETTE_BAR_HEIGHT] px tall where the bar height is derived below
+# from the swatch size + margins so the swatches sit visually centered. The
+# playfield grid still renders behind the strip; painting is suppressed while
+# the cursor is inside the reserved strip (see UI.in_reserved_area) so the user
+# never accidentally paints "under" the palette.
+PALETTE_BG: tuple[int, int, int, int] = (0, 0, 0, 180)
+# ^ semi-transparent black bar (RGBA) behind the palette swatches.
+PALETTE_SWATCH = 24  # px size of each palette swatch (square)
+PALETTE_PADDING = 4  # px between swatches
+PALETTE_MARGIN = 8  # px margin around the palette strip / swatches
+BRUSH_MIN = 1
+BRUSH_MAX = 20
+FPS_COLOR: tuple[int, int, int] = (255, 255, 0)  # yellow FPS / brush readout, top-left
+HIGHLIGHT_COLOR: tuple[int, int, int] = (255, 255, 255)  # active-swatch border
+PAUSED_COLOR: tuple[int, int, int] = (255, 80, 80)  # red "PAUSED" indicator
+FONT_NAME: str | None = None  # None -> pygame's bundled default font
+FONT_SIZE = 16
+
+
+def clamp_brush_radius(radius: int) -> int:
+    """Clamp the brush radius into the inclusive range ``[BRUSH_MIN, BRUSH_MAX]``.
+
+    Extracted as a pure helper so the scroll-wheel handler and its test share
+    one definition of the bounds.
+    """
+    return max(BRUSH_MIN, min(BRUSH_MAX, radius))

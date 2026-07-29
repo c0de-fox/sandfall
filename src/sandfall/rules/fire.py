@@ -25,7 +25,7 @@ import random
 
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
-from ._common import swap
+from ._common import seed_fire_life, seed_smoke_life, swap
 
 # Tunables (feel-free-to-nudge knobs documented in the phase-03 reflection).
 SPREAD_FACTOR = 0.3  # multiplied by target flammability per neighbor per step
@@ -44,14 +44,6 @@ _NEIGHBORS_8: tuple[tuple[int, int], ...] = (
 )
 # Cells directly above (up, up-left, up-right) — preferred smoke spawn sites.
 _ABOVE: tuple[tuple[int, int], ...] = ((0, -1), (-1, -1), (1, -1))
-
-
-def _seed_fire_life() -> int:
-    return random.randint(20, 40)
-
-
-def _seed_smoke_life() -> int:
-    return random.randint(60, 120)
 
 
 def update_fire(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
@@ -77,7 +69,7 @@ def update_fire(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
             continue
         if random.random() < min(1.0, target.flammability * SPREAD_FACTOR):
             grid.set(nx, ny, ElementId.FIRE)
-            grid.set_life(nx, ny, _seed_fire_life())
+            grid.set_life(nx, ny, seed_fire_life())
 
     # 3. Maybe emit smoke into an EMPTY cell above.
     if random.random() < SMOKE_CHANCE:
@@ -90,7 +82,7 @@ def update_fire(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
         if spots:
             sx, sy = random.choice(spots)
             grid.set(sx, sy, ElementId.SMOKE)
-            grid.set_life(sx, sy, _seed_smoke_life())
+            grid.set_life(sx, sy, seed_smoke_life())
 
     # 4. Rise: straight up into EMPTY first; else up-diagonals randomized.
     if y - 1 >= 0 and grid.get(x, y - 1) == ElementId.EMPTY:

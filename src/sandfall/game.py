@@ -38,6 +38,7 @@ from .config import (
     FPS,
     GRID_HEIGHT,
     GRID_WIDTH,
+    SIM_AREA_HEIGHT,
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
     clamp_brush_radius,
@@ -191,11 +192,14 @@ class Game:
         paint_brush(self._grid, gx, gy, self.brush_radius, ElementId.EMPTY)
 
     def _draw(self) -> None:
-        # The grid exactly fills the window (GRID_* * CELL_SIZE == WINDOW_*),
-        # so the fill is just defensive against any future geometry mismatch.
+        # The grid fills only the simulation area above the palette bar
+        # (GRID_WIDTH * CELL_SIZE == WINDOW_WIDTH, GRID_HEIGHT * CELL_SIZE ==
+        # SIM_AREA_HEIGHT); the fill is defensive against any future geometry
+        # mismatch and also paints the bottom PALETTE_BAR_HEIGHT strip before
+        # the UI overlays it.
         self._screen.fill(BG_COLOR)
         small = self._renderer.render(self._grid)
-        scaled = pygame.transform.scale(small, (WINDOW_WIDTH, WINDOW_HEIGHT))
+        scaled = pygame.transform.scale(small, (WINDOW_WIDTH, SIM_AREA_HEIGHT))
         self._screen.blit(scaled, (0, 0))
         self._ui.draw(
             self._screen,

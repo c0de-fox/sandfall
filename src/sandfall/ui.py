@@ -25,6 +25,7 @@ from .config import (
     FONT_SIZE,
     FPS_COLOR,
     HIGHLIGHT_COLOR,
+    PALETTE_BAR_HEIGHT,
     PALETTE_BG,
     PALETTE_MARGIN,
     PALETTE_PADDING,
@@ -36,11 +37,6 @@ from .elements import ELEMENTS, ElementId
 if TYPE_CHECKING:
     # Annotations only (PEP 563): pygame is not imported at runtime here.
     import pygame
-
-
-# Height of the reserved bottom palette strip. Swatches are vertically
-# centered inside it (one PALETTE_MARGIN of slack top and bottom).
-PALETTE_BAR_HEIGHT = PALETTE_SWATCH + 2 * PALETTE_MARGIN
 
 
 @dataclass(frozen=True, slots=True)

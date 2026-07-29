@@ -23,8 +23,10 @@ Seven elements, each with its own physics and interactions:
 | **Smoke** | Gas and short-lived. Rises straight up, drifts up-diagonals, and occasionally wafts sideways. Dissipates after a random lifetime. |
 | **Plant** | Static solid. **Grows** into an empty neighbor when water is adjacent (water is not consumed). Also flammable. |
 
-The simulation runs at a fixed 60 FPS over a 200 x 150 grid (an 800 x 600
-window with 4 x 4 pixel cells).
+The simulation runs at a fixed 60 FPS over a 200 x 140 grid — an 800 x 560
+playfield (an 800 x 600 window with a 40px palette bar at the bottom and
+4 x 4 pixel cells). Elements pile up on top of the palette bar, which acts
+as the simulation floor.
 
 ## Controls
 

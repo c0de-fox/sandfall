@@ -46,7 +46,7 @@ are importable and testable headlessly.
 ## The simulation model: `Grid`
 
 `Grid` (`grid.py`) is the entire world state. It holds two parallel numpy
-`uint8` arrays, both shape `(height, width)` = `(150, 200)`:
+`uint8` arrays, both shape `(height, width)` = `(140, 200)`:
 
 - `array` — the **element id** of each cell (`0` = EMPTY, see `ElementId`).
 - `life` — a **per-cell lifetime** counter for finite-duration elements
@@ -60,6 +60,17 @@ Conventions:
 - Out-of-bounds *writes* (`set`, `set_life`, `fill_circle`) are silently
   clipped so a brush painting past an edge never raises; out-of-bounds *reads*
   (`get`, `get_life`) raise `IndexError`.
+
+### Geometry: the palette bar is the simulation floor
+
+The grid does **not** fill the whole window. It spans only the pixels above
+the 40px palette bar (`SIM_AREA_HEIGHT = WINDOW_HEIGHT - PALETTE_BAR_HEIGHT`
+= 560), so `GRID_HEIGHT * CELL_SIZE == WINDOW_HEIGHT - PALETTE_BAR_HEIGHT`
+exactly. The grid's bottom pixel row lands on the palette's top edge, which
+means falling elements pile *on* the bar instead of falling behind it.
+`UI.bar_y` (`== WINDOW_HEIGHT - PALETTE_BAR_HEIGHT == 560`) is the same
+value, so painting is suppressed exactly where the palette begins and mouse
+coordinates map cleanly via `mx // CELL_SIZE, my // CELL_SIZE`.
 
 ### The scan: `Simulation.step`
 
@@ -169,9 +180,12 @@ not displacable.
    no Python-level loops.
 3. The image is transposed to pygame's column-major `(W, H, 3)` order and
    pushed onto a grid-sized `Surface` via `pygame.surfarray.blit_array`.
-4. `Game._draw` scales that 200 x 150 surface up to the 800 x 600 window
-   with `pygame.transform.scale` (nearest-neighbor, so the pixel look stays
-   crisp), then blits the UI on top.
+4. `Game._draw` scales that 200 x 140 surface up to the 800 x 560 playfield
+   (the 800 x 600 window minus the 40px palette bar) with
+   `pygame.transform.scale` (nearest-neighbor, so the pixel look stays
+   crisp), then blits the UI on top. The palette bar is then drawn over the
+   bottom 40px — it is the simulation floor, so elements pile on it instead
+   of falling behind it.
 
 The LUT builder and the id -> RGB mapper are split out as pure numpy
 functions so the color mapping is unit-testable without a display.

@@ -135,3 +135,23 @@ def test_swatch_at_on_eraser_returns_empty() -> None:
     cy = eraser.y + eraser.h // 2
 
     assert ui.swatch_at(cx, cy) == ElementId.EMPTY
+
+
+def test_grid_height_makes_palette_top_the_sim_floor() -> None:
+    """The grid's bottom pixel row lands exactly on the palette's top edge.
+
+    GRID_HEIGHT * CELL_SIZE == WINDOW_HEIGHT - PALETTE_BAR_HEIGHT, so the
+    grid spans only the area above the palette (elements pile ON the bar).
+    This is the core geometry invariant for Phase 02; it is what guarantees
+    ``UI.bar_y == 560`` lines up with the grid's bottom row.
+    """
+    from sandfall.config import CELL_SIZE, GRID_HEIGHT, SIM_AREA_HEIGHT
+
+    # The grid's pixel height equals the simulation area height (no leftover).
+    assert GRID_HEIGHT * CELL_SIZE == SIM_AREA_HEIGHT
+    # ...and the simulation area is exactly the window minus the palette strip.
+    assert GRID_HEIGHT * CELL_SIZE == WINDOW_HEIGHT - PALETTE_BAR_HEIGHT
+    # At the default 800x600 window + 40px palette bar this is 560 px, which
+    # also equals UI.bar_y (the palette's top edge) — so the grid's bottom
+    # row rests on the palette's top.
+    assert GRID_HEIGHT * CELL_SIZE == 560

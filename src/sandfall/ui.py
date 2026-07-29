@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .config import (
+    ERASER_LABEL,
+    ERASER_SWATCH_BORDER,
+    ERASER_SWATCH_COLOR,
     FONT_NAME,
     FONT_SIZE,
     FPS_COLOR,
@@ -60,14 +63,18 @@ class Swatch:
 
 
 def palette_layout(window_width: int, bar_y: int) -> list[Swatch]:
-    """Compute the swatch rects for every non-EMPTY element, left-to-right.
+    """Compute the swatch rects: every non-EMPTY element left-to-right, then
+    an Eraser swatch (ElementId.EMPTY) appended last.
 
-    Pure: no pygame. Swatches are laid out in :class:`ElementId` ascending
-    order starting from the left margin, each ``PALETTE_SWATCH`` square with
-    ``PALETTE_PADDING`` between neighbors, vertically centered inside the
-    palette strip whose top is ``bar_y``. ``window_width`` is accepted for
-    future layouts (e.g. right-alignment / wrapping) and to keep the API
-    symmetric with the window geometry; the v1 layout does not wrap.
+    Pure: no pygame. Real elements are laid out in :class:`ElementId`
+    ascending order starting from the left margin, each
+    ``PALETTE_SWATCH`` square with ``PALETTE_PADDING`` between neighbors,
+    vertically centered inside the palette strip whose top is ``bar_y``.
+    The Eraser is appended at the right end as a utility tool; selecting
+    it sets ``selected_element = ElementId.EMPTY`` so left-drag also
+    erases. ``window_width`` is accepted for future layouts (e.g.
+    right-alignment / wrapping) and to keep the API symmetric with the
+    window geometry; the v1 layout does not wrap.
     """
     del window_width  # reserved for future layouts; not needed for the v1 row.
     swatches: list[Swatch] = []
@@ -78,6 +85,8 @@ def palette_layout(window_width: int, bar_y: int) -> list[Swatch]:
             continue
         swatches.append(Swatch(eid, x, y, PALETTE_SWATCH, PALETTE_SWATCH))
         x += PALETTE_SWATCH + PALETTE_PADDING
+    # Eraser tool appended last (reuses ElementId.EMPTY; left-drag erases).
+    swatches.append(Swatch(ElementId.EMPTY, x, y, PALETTE_SWATCH, PALETTE_SWATCH))
     return swatches
 
 
@@ -170,7 +179,24 @@ class UI:
         assert self._bar_surf is not None
         screen.blit(self._bar_surf, (0, self._bar_y))
         for s in self._swatches:
-            color = ELEMENTS[s.element_id].color
-            pygame.draw.rect(screen, color, (s.x, s.y, s.w, s.h))
+            rect = (s.x, s.y, s.w, s.h)
+            if s.element_id == ElementId.EMPTY:
+                # EMPTY's registered color is (0,0,0) — invisible on the dark
+                # bar — so the Eraser swatch is rendered with a distinct
+                # light-gray fill + darker border + an "E" glyph.
+                pygame.draw.rect(screen, ERASER_SWATCH_COLOR, rect)
+                pygame.draw.rect(screen, ERASER_SWATCH_BORDER, rect, 1)
+                assert self._font is not None
+                label = self._font.render(ERASER_LABEL, True, ERASER_SWATCH_BORDER)
+                screen.blit(
+                    label,
+                    (
+                        s.x + (s.w - label.get_width()) // 2,
+                        s.y + (s.h - label.get_height()) // 2,
+                    ),
+                )
+            else:
+                color = ELEMENTS[s.element_id].color
+                pygame.draw.rect(screen, color, rect)
             if s.element_id == active:
-                pygame.draw.rect(screen, HIGHLIGHT_COLOR, (s.x, s.y, s.w, s.h), 2)
+                pygame.draw.rect(screen, HIGHLIGHT_COLOR, rect, 2)

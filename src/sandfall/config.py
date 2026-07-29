@@ -50,6 +50,14 @@ BRUSH_MAX = 20
 FPS_COLOR: tuple[int, int, int] = (255, 255, 0)  # yellow FPS / brush readout, top-left
 HIGHLIGHT_COLOR: tuple[int, int, int] = (255, 255, 255)  # active-swatch border
 PAUSED_COLOR: tuple[int, int, int] = (255, 80, 80)  # red "PAUSED" indicator
+
+# Eraser swatch visual. EMPTY's registered color is (0, 0, 0) (invisible on the
+# dark palette bar), so the Eraser swatch is rendered with a distinct fill +
+# border + an "E" glyph (the font is already lazily created in UI.draw).
+ERASER_SWATCH_COLOR: tuple[int, int, int] = (180, 180, 180)  # light-gray fill
+ERASER_SWATCH_BORDER: tuple[int, int, int] = (90, 90, 90)  # darker border
+ERASER_LABEL = "E"  # single-character glyph rendered centered in the swatch
+
 FONT_NAME: str | None = None  # None -> pygame's bundled default font
 FONT_SIZE = 16
 

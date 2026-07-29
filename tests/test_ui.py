@@ -22,18 +22,24 @@ def _non_empty_element_ids() -> list[ElementId]:
     return [eid for eid in ElementId if eid != ElementId.EMPTY]
 
 
-def test_palette_layout_one_swatch_per_non_empty_element() -> None:
+def test_palette_layout_one_swatch_per_element_plus_eraser() -> None:
     swatches = palette_layout(WINDOW_WIDTH, WINDOW_HEIGHT - PALETTE_BAR_HEIGHT)
 
-    assert len(swatches) == len(ElementId) - 1
-    assert {s.element_id for s in swatches} == set(_non_empty_element_ids())
+    # One swatch per ElementId member: 7 real elements + 1 Eraser (EMPTY).
+    assert len(swatches) == len(ElementId)
+    # EMPTY is included (representing the Eraser swatch) — the set of ids
+    # in the palette covers every member of the enum.
+    assert {s.element_id for s in swatches} == set(ElementId)
 
 
 def test_palette_layout_left_to_right_in_enum_order() -> None:
     swatches = palette_layout(WINDOW_WIDTH, WINDOW_HEIGHT - PALETTE_BAR_HEIGHT)
 
-    # Element ids appear in ElementId ascending order (matches the registry).
-    assert [s.element_id for s in swatches] == _non_empty_element_ids()
+    # Real elements appear in ElementId ascending order, then the Eraser
+    # (EMPTY) appended last.
+    assert [s.element_id for s in swatches] == _non_empty_element_ids() + [
+        ElementId.EMPTY
+    ]
     # x positions strictly increase...
     xs = [s.x for s in swatches]
     assert xs == sorted(xs)
@@ -109,3 +115,23 @@ def test_palette_strip_lies_within_the_window() -> None:
         assert s.x + s.w <= WINDOW_WIDTH
         assert 0 <= s.y
         assert s.y + s.h <= WINDOW_HEIGHT
+
+
+def test_palette_layout_includes_exactly_one_eraser_appended_last() -> None:
+    """The Eraser (ElementId.EMPTY) appears exactly once, at the right end."""
+    swatches = palette_layout(WINDOW_WIDTH, WINDOW_HEIGHT - PALETTE_BAR_HEIGHT)
+
+    erasers = [s for s in swatches if s.element_id == ElementId.EMPTY]
+    assert len(erasers) == 1
+    # The eraser is the last swatch (appended after the real elements).
+    assert swatches[-1].element_id == ElementId.EMPTY
+
+
+def test_swatch_at_on_eraser_returns_empty() -> None:
+    """Clicking the Eraser swatch selects EMPTY so left-drag erases too."""
+    ui = UI(WINDOW_WIDTH, WINDOW_HEIGHT)
+    eraser = [s for s in ui.swatches if s.element_id == ElementId.EMPTY][0]
+    cx = eraser.x + eraser.w // 2
+    cy = eraser.y + eraser.h // 2
+
+    assert ui.swatch_at(cx, cy) == ElementId.EMPTY

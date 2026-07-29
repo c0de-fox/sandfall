@@ -31,7 +31,9 @@ window with 4 x 4 pixel cells).
 | Input | Action |
 | --- | --- |
 | **Left-click / drag** | Paint the selected element under the cursor (ignored over the palette strip at the bottom). |
+| **Right-click / drag** | Erase (paint EMPTY) under the cursor (ignored over the palette strip). |
 | **Click a palette swatch** | Select that element. |
+| **Eraser swatch** | Select the Eraser (rightmost swatch) so left-drag erases instead of painting. |
 | **Mouse wheel** | Grow / shrink the brush radius (range 1–20). Scroll up to grow. |
 | **Space** | Pause / resume the simulation. |
 | **N** | Advance exactly one step while paused (no-op while running). |

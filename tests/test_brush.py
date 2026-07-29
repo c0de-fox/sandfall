@@ -138,3 +138,29 @@ def test_paint_brush_overwrites_old_life() -> None:
 
     assert grid.get(5, 5) == ElementId.FIRE
     assert FIRE_LIFE_MIN <= grid.get_life(5, 5) <= FIRE_LIFE_MAX
+
+
+def test_paint_brush_empty_clears_element_and_life() -> None:
+    """Erasing via paint_brush(..., EMPTY) clears the id AND zeroes life.
+
+    This is the regression for the Eraser tool (right-click erase + Eraser
+    swatch): ``paint_brush`` delegates to ``Grid.fill_circle``, which paints
+    the id and zeros life on every cell of the disk. Without that contract,
+    right-clicking a burning FIRE cell would leave it as EMPTY-with-stale-life
+    (which the renderer shows as EMPTY but the simulation might mis-handle).
+    """
+    grid = Grid(10, 10)
+    grid.set(5, 5, ElementId.FIRE)
+    grid.set_life(5, 5, 99)
+    assert grid.get(5, 5) == ElementId.FIRE
+    assert grid.get_life(5, 5) == 99
+
+    paint_brush(grid, 5, 5, 1, ElementId.EMPTY)
+
+    assert grid.get(5, 5) == ElementId.EMPTY
+    assert grid.get_life(5, 5) == 0
+    # All cells in the disk are EMPTY with zero life.
+    for y in range(grid.height):
+        for x in range(grid.width):
+            assert grid.get(x, y) == ElementId.EMPTY
+            assert grid.get_life(x, y) == 0

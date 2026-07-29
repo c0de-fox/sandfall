@@ -110,6 +110,7 @@ class Game:
             while self._running:
                 self._handle_events()
                 self._paint_if_dragging()
+                self._erase_if_dragging()
                 if self._loop.consume_step():
                     self._sim.step()
                 self._draw()
@@ -138,6 +139,10 @@ class Game:
                 # Scroll-up grows the brush.
                 self.brush_radius = clamp_brush_radius(self.brush_radius + event.y)
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Only button 1 (left) selects; right-click erases (see
+                # _erase_if_dragging) and must NOT select. The guard above
+                # (`event.button == 1`) enforces that — a right-click (button 3)
+                # falls through this whole elif without selecting a swatch.
                 # A left-click inside a swatch selects that element and must
                 # NOT also paint. Selection only happens on button-down; the
                 # subsequent paint-this-frame is suppressed because the cursor
@@ -164,6 +169,26 @@ class Game:
             return
         gx, gy = mx // CELL_SIZE, my // CELL_SIZE
         paint_brush(self._grid, gx, gy, self.brush_radius, self.selected_element)
+
+    def _erase_if_dragging(self) -> None:
+        """Erase (paint EMPTY) under the cursor while the RIGHT button is held.
+
+        Suppressed inside the palette strip, identical to left-button
+        painting, so right-dragging over swatches does not erase beneath
+        them. Right-click never selects a swatch (only button 1 does — see
+        :meth:`_handle_events`). Runs every frame after
+        :meth:`_paint_if_dragging`, so if both buttons are held, erase
+        runs second and wins (acceptable edge case). The
+        :func:`paint_brush` helper delegates to :meth:`Grid.fill_circle`,
+        which clears the element id AND zeroes life on every painted cell.
+        """
+        if not pygame.mouse.get_pressed()[2]:
+            return
+        mx, my = pygame.mouse.get_pos()
+        if self._ui.in_reserved_area(mx, my):
+            return
+        gx, gy = mx // CELL_SIZE, my // CELL_SIZE
+        paint_brush(self._grid, gx, gy, self.brush_radius, ElementId.EMPTY)
 
     def _draw(self) -> None:
         # The grid exactly fills the window (GRID_* * CELL_SIZE == WINDOW_*),

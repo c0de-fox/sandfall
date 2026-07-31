@@ -63,7 +63,7 @@ class Element:
     # Auto-ignition threshold: a cell of this element ignites (becomes FIRE)
     # when its OWN temp exceeds flashpoint. 0 means NEVER (the default) — the
     # Phase 02 reactive wood/plant rules check `flashpoint > 0 and temp >
-    # flashpoint`. Replaces the old probabilistic SPREAD_FACTOR.
+    # flashpoint`. Replaces the old probabilistic per-neighbor spread.
     flashpoint: int = 0
     # Heat conductivity scalar in [0.0, 1.0]; also stored in the conductivity
     # LUT (config.COND_*). Kept on Element too so ELEMENTS is the single

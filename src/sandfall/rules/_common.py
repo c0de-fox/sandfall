@@ -9,13 +9,13 @@ These encode the cross-rule contracts used throughout the simulation:
   values AND their per-cell temperature. Every rule that moves a cell must
   go through this helper so the parallel ``life`` and ``temp`` arrays stay
   consistent with the element id array.
-* :func:`seed_fire_life` / :func:`seed_smoke_life` — the canonical lifetime
-  ranges for FIRE and SMOKE cells. Both the rules (when they ignite/spawn)
-  and the painting path (when the user brushes FIRE/SMOKE onto the grid) go
-  through these so a painted fire burns for the same duration as a
-  rule-spawned one. Centralizing them here is what lets Phase 05's brush
-  fix the "painted fire dies instantly" bug without duplicating magic
-  numbers.
+* :func:`seed_fire_life` / :func:`seed_smoke_life` / :func:`seed_steam_life` —
+  the canonical lifetime ranges for FIRE, SMOKE, and STEAM cells. Both the
+  rules (when they ignite/spawn) and the painting path (when the user
+  brushes FIRE/SMOKE/STEAM onto the grid) go through these so a painted
+  fire/smoke/steam lives for the same duration as a rule-spawned one.
+  Centralizing them here is what lets Phase 05's brush fix the "painted fire
+  dies instantly" bug without duplicating magic numbers.
 """
 
 from __future__ import annotations
@@ -57,6 +57,19 @@ def seed_smoke_life() -> int:
     The single source of truth for SMOKE duration (see :func:`seed_fire_life`).
     """
     return random.randint(60, 120)
+
+
+def seed_steam_life() -> int:
+    """Return a freshly seeded lifetime (in steps) for a new STEAM cell.
+
+    Steam lingers longer than smoke (it is the boiled-off water vapor and
+    should drift visibly before condensing back to WATER), so its window is
+    wider than :func:`seed_smoke_life`. Both the lava+water reaction (which
+    flashes water to steam) and the painting path (when the user brushes
+    STEAM onto the grid) go through this so a reaction-spawned steam and a
+    painted steam live for the same window of steps.
+    """
+    return random.randint(80, 160)
 
 
 def swap(grid: Grid, x1: int, y1: int, x2: int, y2: int) -> None:

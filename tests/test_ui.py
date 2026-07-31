@@ -25,8 +25,10 @@ def _non_empty_element_ids() -> list[ElementId]:
 def test_palette_layout_one_swatch_per_element_plus_eraser() -> None:
     swatches = palette_layout(INITIAL_WINDOW_W, INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT)
 
-    # One swatch per ElementId member: 7 real elements + 1 Eraser (EMPTY).
-    assert len(swatches) == len(ElementId)
+    # One swatch per ElementId member: 11 real elements + 1 Eraser (EMPTY) = 12
+    # after Phase 03 added STEAM/ICE/LAVA/GLASS. The count tracks
+    # ``len(ElementId)`` so it auto-adjusted when the enum grew 8 -> 12.
+    assert len(swatches) == len(ElementId) == 12
     # EMPTY is included (representing the Eraser swatch) — the set of ids
     # in the palette covers every member of the enum.
     assert {s.element_id for s in swatches} == set(ElementId)
@@ -135,6 +137,35 @@ def test_swatch_at_on_eraser_returns_empty() -> None:
     cy = eraser.y + eraser.h // 2
 
     assert ui.swatch_at(cx, cy) == ElementId.EMPTY
+
+
+def test_palette_resolves_phase03_elements_and_fits_min_window() -> None:
+    """Phase 03 added STEAM/ICE/LAVA/GLASS swatches.
+
+    They appear in the palette (iterating ``ElementId`` auto-added them),
+    each resolves via ``swatch_at`` at its center pixel, and the whole
+    12-swatch row fits inside ``MIN_WINDOW_W`` (bumped to 384 so the wider
+    palette still fits at the minimum window size).
+    """
+    from sandfall.config import MIN_WINDOW_W, PALETTE_PADDING, PALETTE_SWATCH
+
+    ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
+
+    new_elements = [ElementId.STEAM, ElementId.ICE, ElementId.LAVA, ElementId.GLASS]
+    by_id = {s.element_id: s for s in ui.swatches}
+    for eid in new_elements:
+        assert eid in by_id, f"{eid!r} missing from palette"
+        s = by_id[eid]
+        cx = s.x + s.w // 2
+        cy = s.y + s.h // 2
+        assert ui.swatch_at(cx, cy) == eid
+
+    # The full 12-swatch row fits within MIN_WINDOW_W at the minimum size.
+    last = ui.swatches[-1]
+    needed = last.x + last.w + PALETTE_PADDING  # right edge + a margin
+    assert needed <= MIN_WINDOW_W, (needed, MIN_WINDOW_W)
+    # And the documented math: 12 swatches, 11 gaps, 2 outer margins.
+    assert 12 * PALETTE_SWATCH + 11 * PALETTE_PADDING + 2 * 8 <= MIN_WINDOW_W
 
 
 def test_grid_height_makes_palette_top_the_sim_floor() -> None:

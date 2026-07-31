@@ -88,3 +88,27 @@ def test_compute_grid_dims_min_constants_are_consistent() -> None:
 
     assert MIN_GRID_COLS == MIN_WINDOW_W // CELL_SIZE
     assert MIN_GRID_ROWS == (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE
+
+
+def test_min_window_width_fits_twelve_palette_swatches() -> None:
+    """Phase 03 grew the palette 8 -> 12 swatches; MIN_WINDOW_W must fit them.
+
+    The palette row is 12 swatches (11 real elements + the Eraser), each
+    ``PALETTE_SWATCH`` square with ``PALETTE_PADDING`` between neighbors and
+    a margin at each end: 12*24 + 11*4 + 2*8 == 348px. ``MIN_WINDOW_W`` is
+    the next clean ``CELL_SIZE`` multiple above that with margin -> 384
+    (= 96 cols). This keeps the wider palette on-screen at the minimum size.
+    """
+    from sandfall.config import (
+        MIN_WINDOW_W,
+        PALETTE_MARGIN,
+        PALETTE_PADDING,
+        PALETTE_SWATCH,
+    )
+
+    assert MIN_WINDOW_W == 384
+    needed = 12 * PALETTE_SWATCH + 11 * PALETTE_PADDING + 2 * PALETTE_MARGIN
+    assert needed == 348
+    assert MIN_WINDOW_W >= needed
+    # MIN_GRID_COLS recomputed from the bumped width.
+    assert MIN_GRID_COLS == MIN_WINDOW_W // CELL_SIZE == 96

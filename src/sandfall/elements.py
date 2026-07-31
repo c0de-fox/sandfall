@@ -22,8 +22,14 @@ TEMP_MAX = 3000
 class ElementId(IntEnum):
     """Stable integer IDs stored in the grid (uint8).
 
-    Defined in full here so later phases only adjust registry data
-    (colors, densities, rules) and never add new enum members.
+    Extended in Phase 03 (temperature feature) with STEAM, ICE, LAVA, GLASS.
+    Earlier v1 notes said "defined in full; never add new enum members";
+    that was superseded by the temperature feature (user-approved, "Water
+    cycle + lava + glass" — see the temperature master-plan Decision Log
+    #5). Existing member values 0..7 are unchanged, so every LUT index the
+    v1 code relies on (renderer color LUT, conductivity LUT) stays stable;
+    new members take 8..11. ``uint8`` holds up to 255, so there is ample
+    room for future elements.
     """
 
     EMPTY = 0
@@ -34,6 +40,10 @@ class ElementId(IntEnum):
     FIRE = 5
     SMOKE = 6
     PLANT = 7
+    STEAM = 8
+    ICE = 9
+    LAVA = 10
+    GLASS = 11
 
 
 class Phase(IntEnum):
@@ -98,6 +108,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=1.5,
         phase=Phase.POWDER,
         conductivity=0.15,
+        melt_point=1700,  # above this temp, sand melts -> GLASS (Phase 03)
     ),
     # The entries below are populated now with realistic placeholder values so
     # registry lookups never KeyError during development; Phase 03 tunes the
@@ -159,5 +170,53 @@ ELEMENTS: dict[ElementId, Element] = {
         conductivity=0.12,
         flashpoint=250,
         burn_temp=700,
+    ),
+    # --- Phase 03 new elements (STEAM / ICE / LAVA / GLASS) -----------------
+    # Thermal thresholds drive their transitions (see rules/steam.py, ice.py,
+    # lava.py, glass.py). STEAM is a finite-life gas (rises like smoke, then
+    # condenses -> WATER when it cools); ICE is a cold static solid (melts ->
+    # WATER above 0); LAVA is a very hot dense liquid (cools -> STONE, and
+    # reacts with adjacent WATER -> STEAM + STONE); GLASS is a static solid
+    # made only by SAND melting.
+    ElementId.STEAM: Element(
+        id=ElementId.STEAM,
+        name="steam",
+        color=(220, 220, 230),
+        density=0.04,
+        phase=Phase.GAS,
+        conductivity=0.25,
+        temp_spawn=120,  # warm gas on spawn
+        condense_point=60,  # below this temp, condenses -> WATER
+    ),
+    ElementId.ICE: Element(
+        id=ElementId.ICE,
+        name="ice",
+        color=(180, 220, 240),
+        density=0.92,
+        phase=Phase.SOLID,
+        conductivity=0.18,
+        temp_spawn=-5,  # painted ice starts cold
+        melt_point=0,  # above 0 -> WATER (0 is a VALID active threshold for ice)
+    ),
+    ElementId.LAVA: Element(
+        id=ElementId.LAVA,
+        name="lava",
+        color=(240, 90, 20),
+        density=2.5,
+        phase=Phase.LIQUID,
+        conductivity=0.45,
+        temp_spawn=1500,  # painted lava starts very hot
+        # LAVA solidifies -> STONE below LAVA_SOLIDIFY_TEMP (a rule-level
+        # constant in rules/lava.py); there is no Element field for
+        # "solidifies into X", so no threshold is declared here.
+    ),
+    ElementId.GLASS: Element(
+        id=ElementId.GLASS,
+        name="glass",
+        color=(200, 230, 230),
+        density=2.5,
+        phase=Phase.SOLID,
+        conductivity=0.10,
+        # Made only by SAND melting; static once formed (no transitions).
     ),
 }

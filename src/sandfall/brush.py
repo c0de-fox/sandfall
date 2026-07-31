@@ -17,9 +17,11 @@ hot spawn-temp for FIRE/LAVA).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from .elements import AMBIENT_TEMP, ELEMENTS, ElementId
 from .grid import Grid
-from .rules import seed_fire_life, seed_smoke_life
+from .rules import seed_fire_life, seed_smoke_life, seed_steam_life
 
 
 def paint_brush(
@@ -32,12 +34,12 @@ def paint_brush(
 
     * walks the same disk once more setting each painted cell's temperature to
       its element's ``temp_spawn`` (uniformly for ALL elements — most default
-      to ``AMBIENT_TEMP`` so the write is skipped; FIRE is hot, and Phase 03's
-      LAVA will be too);
-    * for FIRE and SMOKE only, seeds each painted cell's life via the canonical
-      :func:`seed_fire_life` / :func:`seed_smoke_life` helpers. Without this
-      seeding pass, painted FIRE/SMOKE would have life 0 and expire on the very
-      next step.
+      to ``AMBIENT_TEMP`` so the write is skipped; FIRE and LAVA are hot, ICE
+      is cold);
+    * for FIRE, SMOKE, and STEAM only, seeds each painted cell's life via the
+      canonical :func:`seed_fire_life` / :func:`seed_smoke_life` /
+      :func:`seed_steam_life` helpers. Without this seeding pass, painted
+      FIRE/SMOKE/STEAM would have life 0 and expire on the very next step.
 
     Out-of-bounds centers are clipped silently (delegated to ``fill_circle``'s
     own clipping plus the bounded loops below). A negative ``radius`` raises
@@ -46,11 +48,14 @@ def paint_brush(
     grid.fill_circle(gx, gy, radius, element_id)
 
     spawn_temp = ELEMENTS[element_id].temp_spawn
-    seed = (
-        seed_fire_life
-        if element_id == ElementId.FIRE
-        else (seed_smoke_life if element_id == ElementId.SMOKE else None)
-    )
+    if element_id == ElementId.FIRE:
+        seed: Callable[[], int] | None = seed_fire_life
+    elif element_id == ElementId.SMOKE:
+        seed = seed_smoke_life
+    elif element_id == ElementId.STEAM:
+        seed = seed_steam_life
+    else:
+        seed = None
     # No work to do unless this element needs a hot spawn-temp or life seeding.
     if spawn_temp == AMBIENT_TEMP and seed is None:
         return

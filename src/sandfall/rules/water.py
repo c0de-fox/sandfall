@@ -5,15 +5,31 @@ into EMPTY (horizontal flow). Displacement uses the shared
 :func:`can_displace` helper, which for water is effectively "EMPTY only" in
 v1 (no lower-density liquid exists yet), but keeps the seam consistent so a
 future lighter liquid would let water sink through it.
+
+Phase 03 adds temperature-driven phase transitions at the TOP of the rule,
+before any movement (reactive-rule relaxation: transform the own cell in
+place and return None, so a cell that boils/freezes does not also move):
+
+* boil -> STEAM when ``get_temp > boil_point`` (carries a warm temp so the
+  newborn steam does not instantly condense);
+* freeze -> ICE when ``get_temp <= freeze_point``.
+
+``WATER.boil_point == 100`` and ``WATER.freeze_point == 0`` are both VALID
+active thresholds (0 is meaningful for water — it freezes at/below 0°C), so
+neither check is guarded by a ``> 0`` / ``!= 0`` predicate (the guard pattern
+used by WOOD/PLANT exists because their default ``flashpoint == 0`` means
+"never"; water's 0 means "freezes here").
 """
 
 from __future__ import annotations
 
 import random
 
-from ..elements import ElementId
+from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
 from ._common import can_displace, swap
+
+_WATER = ELEMENTS[ElementId.WATER]
 
 
 def update_water(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
@@ -22,7 +38,24 @@ def update_water(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     Liquid physics: try directly below; else down-diagonals in randomized
     order; else left/right in randomized order (one-cell horizontal flow).
     Returns the destination ``(x, y)`` or ``None`` if it did not move.
+
+    Temperature transitions (checked first; a transforming cell does not
+    also move this step): boil -> STEAM, freeze -> ICE.
     """
+    t = grid.get_temp(x, y)
+
+    # Boil -> STEAM. Carry a warm temp so the newborn steam does not instantly
+    # condense on the next step.
+    if t > _WATER.boil_point:
+        grid.set(x, y, ElementId.STEAM)
+        grid.set_temp(x, y, ELEMENTS[ElementId.STEAM].temp_spawn)  # 120
+        return None
+
+    # Freeze -> ICE (at or below freeze_point; freeze_point == 0 is valid).
+    if t <= _WATER.freeze_point:
+        grid.set(x, y, ElementId.ICE)
+        return None
+
     # Straight down.
     if y + 1 < grid.height and can_displace(ElementId.WATER, grid.get(x, y + 1)):
         swap(grid, x, y, x, y + 1)

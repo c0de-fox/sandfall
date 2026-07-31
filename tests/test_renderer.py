@@ -60,6 +60,26 @@ def test_build_color_lut_matches_registered_colors() -> None:
         assert tuple(lut[int(eid)]) == element.color
 
 
+def test_build_color_lut_grew_to_twelve_rows_with_new_elements() -> None:
+    """Phase 03 grew ElementId 8 -> 12; the LUT must auto-resize (it sizes
+    from ``len(ElementId)``) and rows 8..11 must carry the 4 new element
+    colors at the correct stable indices. No ``renderer.py`` edit was needed
+    for this — the LUT builder iterates ``ELEMENTS`` and sizes from the enum.
+    """
+    lut = build_color_lut()
+
+    # The enum has exactly 12 members (v1 values 0..7 unchanged + 8..11 new).
+    assert len(ElementId) == 12
+    assert [e.value for e in ElementId] == list(range(12))
+    # LUT shape tracks the enum width.
+    assert lut.shape == (12, 3)
+    # The 4 new elements land at indices 8..11 and carry their registered colors.
+    new_elements = [ElementId.STEAM, ElementId.ICE, ElementId.LAVA, ElementId.GLASS]
+    assert [int(e) for e in new_elements] == [8, 9, 10, 11]
+    for eid in new_elements:
+        assert tuple(lut[int(eid)]) == ELEMENTS[eid].color
+
+
 def test_grid_to_rgb_shape() -> None:
     grid = Grid(5, 3)
     lut = build_color_lut()

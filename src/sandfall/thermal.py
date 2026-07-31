@@ -15,9 +15,13 @@ import numpy.typing as npt
 from .config import (
     COND_EMPTY,
     COND_FIRE,
+    COND_GLASS,
+    COND_ICE,
+    COND_LAVA,
     COND_PLANT,
     COND_SAND,
     COND_SMOKE,
+    COND_STEAM,
     COND_STONE,
     COND_WATER,
     COND_WOOD,
@@ -46,6 +50,11 @@ def build_conductivity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.FIRE)] = COND_FIRE
     lut[int(ElementId.SMOKE)] = COND_SMOKE
     lut[int(ElementId.PLANT)] = COND_PLANT
+    # Phase 03 new materials (rows 8..11).
+    lut[int(ElementId.STEAM)] = COND_STEAM
+    lut[int(ElementId.ICE)] = COND_ICE
+    lut[int(ElementId.LAVA)] = COND_LAVA
+    lut[int(ElementId.GLASS)] = COND_GLASS
     return lut
 
 

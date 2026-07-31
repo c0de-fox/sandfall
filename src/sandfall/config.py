@@ -62,15 +62,16 @@ SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
 GRID_WIDTH = INITIAL_WINDOW_W // CELL_SIZE  # 800 // 4 == 200  (initial cols)
 GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140  (initial rows)
 
-# Minimum window size. Width must fit the whole palette (8 swatches incl. the
-# Eraser: 8*24 + 7*4 + 2*8 == 236px) with margin -> 256. Height must fit the
-# 40px palette + a usable sim area (>= 40 cells == 160px) -> 200. The minimum
-# is enforced by the compositor via ``Window.minimum_size`` (see Game.__init__);
-# compute_grid_dims additionally floor-clamps the GRID cols/rows to MIN_GRID_*
-# so a tiny window still has a usable grid.
-MIN_WINDOW_W = 256
+# Minimum window size. Width must fit the whole palette (12 swatches incl. the
+# Eraser: 12*24 + 11*4 + 2*8 == 348px) with margin -> 384 (the next clean
+# CELL_SIZE multiple above 348, = 96 cols, 36px of margin). Height must fit
+# the 40px palette + a usable sim area (>= 40 cells == 160px) -> 200. The
+# minimum is enforced by the compositor via ``Window.minimum_size`` (see
+# Game.__init__); compute_grid_dims additionally floor-clamps the GRID
+# cols/rows to MIN_GRID_* so a tiny window still has a usable grid.
+MIN_WINDOW_W = 384
 MIN_WINDOW_H = 200
-MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 256 // 4 == 64
+MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 384 // 4 == 96
 MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 40
 
 # --- Loop -------------------------------------------------------------------
@@ -105,6 +106,11 @@ COND_WOOD = 0.12
 COND_FIRE = 0.50
 COND_SMOKE = 0.20
 COND_PLANT = 0.12
+# Phase 03 new materials.
+COND_STEAM = 0.25
+COND_ICE = 0.18
+COND_LAVA = 0.45
+COND_GLASS = 0.10
 
 # --- Brush / element defaults (Phase 05 will let the user mutate these) -----
 DEFAULT_ELEMENT = ElementId.SAND

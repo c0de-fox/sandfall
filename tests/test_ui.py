@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from sandfall.config import INITIAL_WINDOW_H, INITIAL_WINDOW_W
 from sandfall.elements import ElementId
-from sandfall.ui import PALETTE_BAR_HEIGHT, UI, Swatch, palette_layout
+from sandfall.ui import PALETTE_BAR_HEIGHT, UI, Swatch, format_hud, palette_layout
 
 
 def _non_empty_element_ids() -> list[ElementId]:
@@ -210,3 +210,18 @@ def test_ui_resize_recomputes_bar_y_and_swatches() -> None:
     for s in ui.swatches:
         assert s.y >= ui.bar_y
         assert s.y + s.h <= new_h
+
+
+def test_format_hud_includes_fps_brush_and_count() -> None:
+    """The HUD line shows FPS, brush radius, and particle count.
+
+    Pure (no pygame) — tests the :func:`format_hud` helper that
+    :meth:`UI.draw` renders. Pins the exact format so the count is actually
+    surfaced to the user and so the format is stable across the signature
+    change.
+    """
+    # Representative inputs, including the empty-grid case (count == 0).
+    assert format_hud(59.7, 3, 0) == "59 FPS  r=3  n=0"
+    assert format_hud(60.0, 5, 1234) == "60 FPS  r=5  n=1234"
+    # fps is truncated to int (int()), not rounded.
+    assert format_hud(59.9, 1, 7) == "59 FPS  r=1  n=7"

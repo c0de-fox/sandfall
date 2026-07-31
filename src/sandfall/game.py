@@ -278,10 +278,15 @@ class Game:
         target = (self._grid.width * CELL_SIZE, self._grid.height * CELL_SIZE)
         scaled = pygame.transform.scale(small, target)
         self._screen.blit(scaled, (0, 0))
+        # Particle count: non-empty cells, once per frame (~0.04 ms — free).
+        # Full-grid sum, NOT incremental tracking — cheap at current grid
+        # sizes; revisit only if a much larger grid makes it non-negligible.
+        count = int((self._grid.array != int(ElementId.EMPTY)).sum())
         self._ui.draw(
             self._screen,
             self.selected_element,
             self._clock.get_fps(),
             self.brush_radius,
             self._loop.paused,
+            count,
         )

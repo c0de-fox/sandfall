@@ -86,6 +86,18 @@ def palette_layout(window_width: int, bar_y: int) -> list[Swatch]:
     return swatches
 
 
+def format_hud(fps: float, brush_radius: int, count: int) -> str:
+    """Format the top-left HUD line: FPS, brush radius, particle count.
+
+    Pure (no pygame) so the HUD format is unit-testable headlessly, mirroring
+    the layout/draw split used for the palette (:func:`palette_layout` is the
+    pure counterpart to :meth:`UI.draw`'s swatch rendering). ``count`` is the
+    number of non-empty cells on the grid (computed once per frame by the
+    caller in :meth:`Game._draw`).
+    """
+    return f"{int(fps)} FPS  r={brush_radius}  n={count}"
+
+
 class UI:
     """Owns the palette layout + on-screen HUD (FPS, brush radius, paused).
 
@@ -158,12 +170,14 @@ class UI:
         fps: float,
         brush_radius: int,
         paused: bool,
+        count: int,
     ) -> None:
         """Render the palette + HUD onto ``screen``.
 
         ``active`` is the currently selected element (its swatch is
-        outlined). ``fps``/``brush_radius`` are shown top-left; ``paused``
-        toggles the centered PAUSED indicator.
+        outlined). ``fps``/``brush_radius``/``count`` are shown top-left
+        (``count`` is the number of non-empty cells); ``paused`` toggles the
+        centered PAUSED indicator.
         """
         import pygame  # local: keeps module import pygame-free for the pure helpers
 
@@ -175,9 +189,9 @@ class UI:
             self._bar_surf = pygame.Surface((bar_w, bar_h), pygame.SRCALPHA)
             self._bar_surf.fill(PALETTE_BG)
 
-        # FPS + brush readout, top-left.
+        # FPS + brush + particle-count readout, top-left.
         assert self._font is not None
-        hud = self._font.render(f"{int(fps)} FPS  r={brush_radius}", True, FPS_COLOR)
+        hud = self._font.render(format_hud(fps, brush_radius, count), True, FPS_COLOR)
         screen.blit(hud, (PALETTE_MARGIN, PALETTE_MARGIN))
 
         # PAUSED indicator, centered along the top edge.

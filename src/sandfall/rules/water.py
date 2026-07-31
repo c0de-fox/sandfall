@@ -27,7 +27,7 @@ import random
 
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
-from ._common import can_displace, swap
+from ._common import can_displace, seed_steam_life, swap
 
 _WATER = ELEMENTS[ElementId.WATER]
 
@@ -45,10 +45,12 @@ def update_water(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     t = grid.get_temp(x, y)
 
     # Boil -> STEAM. Carry a warm temp so the newborn steam does not instantly
-    # condense on the next step.
+    # condense, and seed a steam lifetime so it lingers (the same helper the
+    # lava reaction and the brush use) rather than expiring one step later.
     if t > _WATER.boil_point:
         grid.set(x, y, ElementId.STEAM)
         grid.set_temp(x, y, ELEMENTS[ElementId.STEAM].temp_spawn)  # 120
+        grid.set_life(x, y, seed_steam_life())
         return None
 
     # Freeze -> ICE (at or below freeze_point; freeze_point == 0 is valid).

@@ -169,7 +169,8 @@ def test_lava_at_spawn_temp_flows_not_solidify() -> None:
 
 
 def test_lava_water_reaction_is_deterministic_across_scan_orders() -> None:
-    """LAVA adjacent to WATER -> STONE (lava) + STEAM (water), for any seed.
+    """LAVA adjacent to WATER -> STONE (lava) + STEAM (water), for any seed,
+    even at LAVA's realistic 1500 spawn-temp.
 
     Geometry: a fully sealed 3x3 box so the WATER cell cannot fall or flow
     away before LAVA scans, and the spawned STEAM is trapped above by STONE
@@ -179,15 +180,12 @@ def test_lava_water_reaction_is_deterministic_across_scan_orders() -> None:
         row 1:  LAVA   WATER  STONE     <- reaction row (water walled in)
         row 2:  STONE  STONE  STONE     <- floor
 
-    The lava cell's temperature is set to 1000 (not the 1500 spawn-temp):
-    at 1500 the diffusion pre-pass heats the adjacent water above its
-    boil_point (100) in a single step, so the WATER rule's boil branch would
-    convert the water to STEAM *before* the LAVA rule's reaction branch runs
-    (whenever the scan reaches water first) — yielding STEAM without the
-    STONE crust. At 1000 the post-diffusion water temp (~88) stays below
-    boil_point, so the water is still WATER when LAVA scans and the reaction
-    (stone + steam) fires regardless of the randomized x-scan direction.
-    Verified across 20 seeds below.
+    At 1500 the diffusion pre-pass heats the adjacent water above its
+    boil_point (100) in a single step, so when the scan reaches WATER first
+    the WATER rule's boil branch converts it to STEAM before the LAVA rule
+    runs. The LAVA rule therefore accepts a STEAM neighbor too (not just
+    WATER) and still solidifies to STONE — guaranteeing the crust forms
+    regardless of the randomized x-scan direction. Verified across 20 seeds.
     """
     for i in range(20):
         random.seed(i)
@@ -198,7 +196,7 @@ def test_lava_water_reaction_is_deterministic_across_scan_orders() -> None:
             g.set(x, 2, ElementId.STONE)
         # Reaction row: LAVA at (0,1), WATER at (1,1), STONE wall at (2,1).
         g.set(0, 1, ElementId.LAVA)
-        g.set_temp(0, 1, 1000)  # see docstring: hot but won't boil the water
+        g.set_temp(0, 1, ELEMENTS[ElementId.LAVA].temp_spawn)  # 1500 (realistic)
         g.set(1, 1, ElementId.WATER)
         g.set(2, 1, ElementId.STONE)
 

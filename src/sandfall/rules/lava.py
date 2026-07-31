@@ -3,13 +3,18 @@
 Lava behaves as a dense liquid (density 2.5, denser than water 1.0) and a
 heat source. Each step, in priority order:
 
-1. **React with adjacent WATER -> STONE + STEAM.** If any of the 4 orthogonal
-   neighbors is WATER, the lava solidifies to STONE and that water neighbor
-   flashes to STEAM (hot, with a freshly seeded steam life). This side-effect
-   write on a neighbor cell is the same unreturned-neighbor-write pattern
-   ``fire.py`` already documents (the rule contract allows only one return
-   value, so the side-effected cell is not marked moved — a chain reaction
-   that is bounded by grid size and usually desirable).
+1. **React with adjacent WATER or STEAM -> STONE (here).** If any of the 4
+   orthogonal neighbors is WATER, the lava solidifies to STONE and that water
+   neighbor flashes to STEAM (hot, with a freshly seeded steam life). A STEAM
+   neighbor also triggers solidification: at realistic lava temps the
+   diffusion pre-pass can boil an adjacent water to steam *before* this rule
+   runs (the WATER rule's boil branch fires whenever water is scanned first),
+   so accepting steam makes the STONE crust form reliably regardless of scan
+   order (the steam is left as steam, just re-warmed + re-seeded). This
+   side-effect write on a neighbor cell is the same unreturned-neighbor-write
+   pattern ``fire.py`` already documents (the rule contract allows only one
+   return value, so the side-effected cell is not marked moved — a chain
+   reaction that is bounded by grid size and usually desirable).
 2. **Cool -> STONE** when the cell's temperature drops below
    :data:`LAVA_SOLIDIFY_TEMP` (the diffusion pre-pass carries lava's heat
    away into cooler surroundings; once it cools enough it freezes to stone).
@@ -51,13 +56,20 @@ _STEAM = ELEMENTS[ElementId.STEAM]
 
 def update_lava(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     """Step a lava cell: react with water, else cool, else flow like a dense liquid."""
-    # 1. React with an adjacent WATER neighbor -> STONE (here) + STEAM (there).
+    # 1. React with an adjacent WATER or STEAM neighbor -> STONE (here). See
+    #    the module docstring for why STEAM is accepted too (scan-order
+    #    robustness: the water may have already boiled this step).
     for dx, dy in _REACT_NEIGHBORS:
         nx, ny = x + dx, y + dy
-        if grid.in_bounds(nx, ny) and grid.get(nx, ny) == ElementId.WATER:
+        if not grid.in_bounds(nx, ny):
+            continue
+        neighbor = grid.get(nx, ny)
+        if neighbor == ElementId.WATER or neighbor == ElementId.STEAM:
             grid.set(x, y, ElementId.STONE)
-            grid.set(nx, ny, ElementId.STEAM)
-            # Hot enough to not instantly condense (>= STEAM.condense_point).
+            if neighbor == ElementId.WATER:
+                grid.set(nx, ny, ElementId.STEAM)  # water flashes to steam
+            # Warm the (possibly just-spawned) steam above its condense_point
+            # and give it a freshly seeded life so it lingers.
             grid.set_temp(nx, ny, _STEAM.temp_spawn)
             grid.set_life(nx, ny, seed_steam_life())
             return None

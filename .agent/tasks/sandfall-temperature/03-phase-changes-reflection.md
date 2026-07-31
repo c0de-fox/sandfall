@@ -176,3 +176,27 @@ decision is deferred to the user.
 - All four new elements now have palette swatches and render correctly with
   no per-element renderer wiring — the LUT/palette-iterate pattern is the
   reason Phase 04 needs no element-specific render code either.
+
+## Update — lava-crust scan-order caveat RESOLVED (follow-up fix)
+
+The "real surprise" caveat above (a freshly-painted 1500° lava next to
+water sometimes flashed the water to steam without forming a stone crust,
+because the WATER rule's boil branch preempted the LAVA reaction when water
+scanned first) has been fixed in a follow-up commit:
+
+- **`rules/lava.py`:** the reaction now accepts a **STEAM neighbor too**, not
+  just WATER. If the water already boiled to steam this step, the lava still
+  solidifies to STONE against that steam (re-warming + re-seeding the
+  steam's life). So the STONE crust forms for *both* scan orders at the
+  realistic 1500° spawn-temp — no test-only temperature reduction needed.
+- **`rules/water.py`:** the boil branch now seeds steam life via
+  `seed_steam_life` (it previously set STEAM with life 0, so boiled steam
+  expired one step later). Boiled steam now lingers like rule/brush-spawned
+  steam.
+- **`tests/test_phase.py`:** `test_lava_water_reaction_is_deterministic_across_scan_orders`
+  now sets the lava cell to `LAVA.temp_spawn` (1500), not 1000, and still
+  asserts STONE + STEAM + in-range steam life across 20 seeds / both scan
+  directions.
+
+The "worth a sentence in the docs" note for Phase 04 is therefore no longer
+a caveat — the reaction is reliable. (Phase 04 docs can state it plainly.)

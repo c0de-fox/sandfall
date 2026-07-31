@@ -6,8 +6,9 @@ These encode the cross-rule contracts used throughout the simulation:
   water itself only displaces EMPTY in v1 since no lower-density liquid
   exists yet).
 * :func:`swap` — exchange two cells' element ids AND their per-cell life
-  values. Every rule that moves a cell must go through this helper so the
-  parallel ``life`` array stays consistent with the element id array.
+  values AND their per-cell temperature. Every rule that moves a cell must
+  go through this helper so the parallel ``life`` and ``temp`` arrays stay
+  consistent with the element id array.
 * :func:`seed_fire_life` / :func:`seed_smoke_life` — the canonical lifetime
   ranges for FIRE and SMOKE cells. Both the rules (when they ignite/spawn)
   and the painting path (when the user brushes FIRE/SMOKE onto the grid) go
@@ -59,11 +60,12 @@ def seed_smoke_life() -> int:
 
 
 def swap(grid: Grid, x1: int, y1: int, x2: int, y2: int) -> None:
-    """Swap the contents (element id AND life) of two in-bounds cells.
+    """Swap the contents (element id AND life AND temp) of two in-bounds cells.
 
-    Both cells must be in bounds. Carrying life along on every move is what
-    keeps FIRE/SMOKE lifetimes correct when those cells get pushed around
-    (e.g. fire rising, sand displacing a cell that later becomes fire).
+    Both cells must be in bounds. Carrying life and temp along on every move
+    is what keeps FIRE/SMOKE lifetimes and per-cell temperatures correct when
+    those cells get pushed around (e.g. fire rising, sand displacing a cell
+    that later becomes fire).
     """
     a = grid.get(x1, y1)
     b = grid.get(x2, y2)
@@ -73,3 +75,7 @@ def swap(grid: Grid, x1: int, y1: int, x2: int, y2: int) -> None:
     lb = grid.get_life(x2, y2)
     grid.set_life(x1, y1, lb)
     grid.set_life(x2, y2, la)
+    ta = grid.get_temp(x1, y1)
+    tb = grid.get_temp(x2, y2)
+    grid.set_temp(x1, y1, tb)
+    grid.set_temp(x2, y2, ta)

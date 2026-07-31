@@ -7,6 +7,15 @@ consistent: every rule that moves or transforms a cell must also move or
 reset its life entry. The shared swap helper in :mod:`sandfall.rules._common`
 does this for moves; rules that convert a cell (e.g. wood → fire) set life
 explicitly.
+
+A third parallel ``int16`` array ``temp`` carries per-cell temperature
+(Phase 01). It mirrors the ``life`` consistency contract exactly: ``swap``
+carries temp; ``fill_circle`` resets temp to ``AMBIENT_TEMP`` (mirrors
+zeroing life); ``paint_brush`` sets element-specific ``temp_spawn`` afterward
+(mirrors life-seeding); ``migrate_grid`` copies the temp overlap. Heat
+diffusion (one vectorized op run before the movement scan) is the only
+writer that touches the whole array at once; everything else goes through
+``set_temp`` (which clips to ``[TEMP_MIN, TEMP_MAX]``).
 """
 
 from __future__ import annotations
@@ -14,7 +23,7 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from .elements import ElementId
+from .elements import AMBIENT_TEMP, TEMP_MAX, TEMP_MIN, ElementId
 
 
 class Grid:
@@ -34,6 +43,7 @@ class Grid:
     _height: int
     _data: npt.NDArray[np.uint8]
     _life: npt.NDArray[np.uint8]
+    _temp: npt.NDArray[np.int16]
 
     def __init__(self, width: int, height: int) -> None:
         if width <= 0 or height <= 0:
@@ -42,6 +52,7 @@ class Grid:
         self._height = height
         self._data = np.zeros((height, width), dtype=np.uint8)
         self._life = np.zeros((height, width), dtype=np.uint8)
+        self._temp = np.full((height, width), AMBIENT_TEMP, dtype=np.int16)
 
     @property
     def width(self) -> int:
@@ -67,6 +78,17 @@ class Grid:
         and clipping are handled consistently.
         """
         return self._life
+
+    @property
+    def temp(self) -> npt.NDArray[np.int16]:
+        """Raw ``(height, width)`` int16 view of per-cell temperature.
+
+        Intended read-only access (e.g. for the diffusion pass and the heat
+        overlay); mutate via :meth:`set_temp` so clipping is applied
+        consistently. The diffusion pre-pass assigns a freshly-computed array
+        back to the grid's ``_temp`` directly (see :class:`Simulation.step`).
+        """
+        return self._temp
 
     def in_bounds(self, x: int, y: int) -> bool:
         """True if ``(x, y)`` is inside the grid."""
@@ -121,6 +143,31 @@ class Grid:
             value = 255
         self._life[y, x] = value
 
+    def get_temp(self, x: int, y: int) -> int:
+        """Return the temperature at ``(x, y)`` as a plain ``int``.
+
+        Raises ``IndexError`` if out of bounds.
+        """
+        if not self.in_bounds(x, y):
+            raise IndexError(
+                f"({x}, {y}) out of bounds for {self._width}x{self._height} grid"
+            )
+        return int(self._temp[y, x])
+
+    def set_temp(self, x: int, y: int, value: int) -> None:
+        """Set the temperature at ``(x, y)`` (clipped to ``[TEMP_MIN, TEMP_MAX]``).
+
+        Out-of-bounds writes are silently ignored to mirror :meth:`set` /
+        :meth:`set_life`.
+        """
+        if not self.in_bounds(x, y):
+            return
+        if value < TEMP_MIN:
+            value = TEMP_MIN
+        elif value > TEMP_MAX:
+            value = TEMP_MAX
+        self._temp[y, x] = value
+
     def fill_circle(
         self, cx: int, cy: int, radius: int, element_id: ElementId | int
     ) -> None:
@@ -128,15 +175,18 @@ class Grid:
 
         Cells outside the grid are silently clipped. ``radius == 0`` paints a
         single cell. ``radius < 0`` raises ``ValueError``. Painted cells have
-        their life reset to 0 (brushes that overwrite a burning cell should
-        not leave stale life behind); callers painting FIRE/SMOKE should
-        seed life afterwards if they want it to persist.
+        their life reset to 0 and their temperature reset to
+        ``AMBIENT_TEMP`` (brushes that overwrite a burning cell should not
+        leave stale life or heat behind); callers painting FIRE/SMOKE should
+        seed life afterwards, and callers wanting a hot spawn-temp should set
+        it afterwards, if they want either to persist.
         """
         if radius < 0:
             raise ValueError(f"radius must be non-negative ({radius=})")
         if radius == 0:
             self.set(cx, cy, element_id)
             self.set_life(cx, cy, 0)
+            self.set_temp(cx, cy, AMBIENT_TEMP)
             return
         r2 = radius * radius
         x0 = max(0, cx - radius)
@@ -151,17 +201,18 @@ class Grid:
                 if dx * dx + dy * dy <= r2:
                     self._data[y, x] = eid
                     self._life[y, x] = 0
+                    self._temp[y, x] = AMBIENT_TEMP
 
 
 def migrate_grid(old: Grid, new: Grid) -> None:
-    """Copy the overlapping region of ``old`` into ``new`` (ids AND life).
+    """Copy the overlapping region of ``old`` into ``new`` (ids AND life AND temp).
 
     The copied region is ``min(old.width, new.width) x min(old.height,
     new.height)``. Old content outside the overlap is cropped and lost
     (permanent — there is no undo). Cells in ``new`` outside the overlap are
     left untouched (they keep whatever they had before — typically the
-    default EMPTY / life 0). ``old`` is read-only here; ``new`` is mutated
-    in place.
+    default EMPTY / life 0 / temp ``AMBIENT_TEMP``). ``old`` is read-only
+    here; ``new`` is mutated in place.
 
     Pure / pygame-free -> unit-tested headlessly. Used by ``Game`` on window
     resize to preserve the player's scene.
@@ -171,3 +222,4 @@ def migrate_grid(old: Grid, new: Grid) -> None:
     if w > 0 and h > 0:
         new._data[:h, :w] = old._data[:h, :w]
         new._life[:h, :w] = old._life[:h, :w]
+        new._temp[:h, :w] = old._temp[:h, :w]

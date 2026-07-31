@@ -164,3 +164,44 @@ def test_paint_brush_empty_clears_element_and_life() -> None:
         for x in range(grid.width):
             assert grid.get(x, y) == ElementId.EMPTY
             assert grid.get_life(x, y) == 0
+
+
+# --- Spawn-temperature (Phase 01) -------------------------------------------
+
+
+def test_paint_brush_fire_sets_spawn_temp() -> None:
+    """A painted FIRE disk's cells hold FIRE's temp_spawn (hot)."""
+    from sandfall.elements import ELEMENTS
+
+    grid = Grid(20, 20)
+    paint_brush(grid, 10, 10, 2, ElementId.FIRE)
+    for x, y in _painted_cells(grid, ElementId.FIRE):
+        assert grid.get_temp(x, y) == ELEMENTS[ElementId.FIRE].temp_spawn, (x, y)
+
+
+def test_paint_brush_non_thermal_elements_at_ambient() -> None:
+    """Non-heat-source elements paint at AMBIENT_TEMP (no stale heat left)."""
+    from sandfall.config import AMBIENT_TEMP
+
+    grid = Grid(20, 20)
+    for eid in (ElementId.SAND, ElementId.WATER, ElementId.STONE):
+        # Pre-heat the disk so we assert the temp really resets, not just
+        # happens to already be ambient.
+        for y in range(grid.height):
+            for x in range(grid.width):
+                grid.set_temp(x, y, 999)
+        paint_brush(grid, 10, 10, 2, eid)
+        for x, y in _painted_cells(grid, eid):
+            assert grid.get_temp(x, y) == AMBIENT_TEMP, (eid, x, y)
+
+
+def test_paint_brush_overwrites_stale_temp() -> None:
+    """Painting FIRE over a cell that had stale heat sets the spawn-temp freshly."""
+    grid = Grid(10, 10)
+    grid.set(5, 5, ElementId.STONE)
+    grid.set_temp(5, 5, 5)  # stale cold
+
+    paint_brush(grid, 5, 5, 0, ElementId.FIRE)
+
+    assert grid.get(5, 5) == ElementId.FIRE
+    assert grid.get_temp(5, 5) == 800  # FIRE.temp_spawn

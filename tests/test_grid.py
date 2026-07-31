@@ -181,24 +181,99 @@ def test_fill_circle_resets_life() -> None:
     assert grid.get_life(2, 2) == 0
 
 
+# --- Temperature field (Phase 01) -------------------------------------------
+
+
+def test_temp_array_defaults_to_ambient() -> None:
+    from sandfall.config import AMBIENT_TEMP
+
+    grid = Grid(width=4, height=4)
+    assert grid.temp.shape == (4, 4)
+    assert grid.temp.dtype == np.int16
+    for y in range(grid.height):
+        for x in range(grid.width):
+            assert grid.get_temp(x, y) == AMBIENT_TEMP
+
+
+def test_set_temp_get_temp_round_trip() -> None:
+    grid = Grid(width=3, height=3)
+    grid.set_temp(1, 1, 1500)
+    assert grid.get_temp(1, 1) == 1500
+    assert grid.get_temp(0, 0) == 20  # AMBIENT
+
+
+def test_set_temp_clips_to_band() -> None:
+    from sandfall.config import TEMP_MAX, TEMP_MIN
+
+    grid = Grid(width=3, height=3)
+    grid.set_temp(0, 0, -5000)
+    assert grid.get_temp(0, 0) == TEMP_MIN
+    grid.set_temp(0, 0, 99999)
+    assert grid.get_temp(0, 0) == TEMP_MAX
+
+
+def test_set_temp_out_of_bounds_is_silent() -> None:
+    grid = Grid(width=3, height=3)
+    grid.set_temp(-1, 0, 100)
+    grid.set_temp(0, 5, 100)
+    grid.set_temp(3, 3, 100)
+
+
+def test_get_temp_out_of_bounds_raises() -> None:
+    grid = Grid(width=3, height=3)
+    with pytest.raises(IndexError):
+        grid.get_temp(-1, 0)
+    with pytest.raises(IndexError):
+        grid.get_temp(3, 0)
+
+
+def test_swap_carries_temp() -> None:
+    from sandfall.rules._common import swap
+
+    grid = Grid(width=3, height=3)
+    grid.set(0, 0, ElementId.SAND)
+    grid.set_temp(0, 0, 900)
+    grid.set(1, 1, ElementId.WATER)
+    grid.set_temp(1, 1, 10)
+    swap(grid, 0, 0, 1, 1)
+    assert grid.get(0, 0) == ElementId.WATER
+    assert grid.get_temp(0, 0) == 10
+    assert grid.get(1, 1) == ElementId.SAND
+    assert grid.get_temp(1, 1) == 900
+
+
+def test_fill_circle_resets_temp_to_ambient() -> None:
+    from sandfall.config import AMBIENT_TEMP
+
+    grid = Grid(width=5, height=5)
+    grid.set(2, 2, ElementId.FIRE)
+    grid.set_temp(2, 2, 1200)
+    grid.fill_circle(2, 2, 0, ElementId.SAND)
+    assert grid.get(2, 2) == ElementId.SAND
+    assert grid.get_temp(2, 2) == AMBIENT_TEMP
+
+
 # --- migrate_grid (Phase 03 resizable window) --------------------------------
 
 
 def test_migrate_grid_grow_preserves_overlap_ids_and_life() -> None:
-    """Growing the grid carries the overlap (ids + life) into the new grid."""
+    """Growing the grid carries the overlap (ids + life + temp) into the new grid."""
     old = Grid(3, 3)
     old.set(0, 0, ElementId.SAND)
     old.set(2, 2, ElementId.FIRE)
     old.set_life(2, 2, 77)
+    old.set_temp(1, 1, 500)
     new = Grid(5, 5)
     migrate_grid(old, new)
-    # Overlap preserved (ids + life).
+    # Overlap preserved (ids + life + temp).
     assert new.get(0, 0) == ElementId.SAND
     assert new.get(2, 2) == ElementId.FIRE
     assert new.get_life(2, 2) == 77
+    assert new.get_temp(1, 1) == 500
     # Newly exposed cells (outside the 3x3 overlap) keep their defaults.
     assert new.get(4, 4) == ElementId.EMPTY
     assert new.get_life(4, 4) == 0
+    assert new.get_temp(4, 4) == 20  # AMBIENT default in the new exposed cell
 
 
 def test_migrate_grid_shrink_crops_overflow() -> None:
@@ -275,11 +350,13 @@ def test_migrate_grid_same_size_is_a_full_copy() -> None:
     old.set(0, 0, ElementId.SAND)
     old.set(2, 2, ElementId.FIRE)
     old.set_life(2, 2, 12)
+    old.set_temp(1, 1, 350)
     new = Grid(3, 3)
     migrate_grid(old, new)
     assert new.get(0, 0) == ElementId.SAND
     assert new.get(2, 2) == ElementId.FIRE
     assert new.get_life(2, 2) == 12
+    assert new.get_temp(1, 1) == 350
 
 
 def test_migrate_grid_empty_overlap_when_either_dim_is_zero() -> None:

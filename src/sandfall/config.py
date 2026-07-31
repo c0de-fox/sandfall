@@ -6,7 +6,29 @@ and Phase 06 (packaging) can import them from a single place.
 
 from __future__ import annotations
 
-from .elements import ElementId
+from .elements import AMBIENT_TEMP, TEMP_MAX, TEMP_MIN, ElementId
+
+# Re-export the temperature-band constants so callers that already import
+# from config see them here too. The canonical definitions live at the top of
+# elements.py (NOT here) to keep a one-way dependency: config -> elements.
+# elements.py must not import from config (config imports ElementId from
+# elements above), so defining the temp band in elements avoids the
+# circular-import loop.
+#
+# ``__all__`` is required here because mypy is in strict mode
+# (``no_implicit_reexport``) and ruff's F401 would otherwise flag these three
+# names as unused imports; both tools honor ``__all__`` as the explicit
+# re-export marker — the same pattern already used in ``rules/__init__.py``.
+# Listing ONLY these three re-exported names is intentional: every other name
+# in this module is DEFINED here (so mypy treats it as exported automatically).
+# Nothing in the tree uses ``from config import *`` (config has 30+ names;
+# star-importing it was never intended), so narrowing star-exports to these
+# three is purely theoretical and is the documented re-export surface.
+__all__ = [
+    "AMBIENT_TEMP",
+    "TEMP_MAX",
+    "TEMP_MIN",
+]
 
 # --- Window / grid geometry -------------------------------------------------
 # All pixel/cell geometry derives from a small chain of constants here so the
@@ -53,6 +75,36 @@ MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 
 
 # --- Loop -------------------------------------------------------------------
 FPS = 60
+
+# --- Temperature field (Phase 01) ------------------------------------------
+# Per-cell temperature, integer degrees-C-like, stored as int16 on Grid.
+# AMBIENT_TEMP is the resting temperature every cell initializes to and that
+# fill_circle resets to (mirrors how it zeroes life). The clip band is wide
+# enough for sand melting (~1700) and sub-zero freezing; int16 headroom is huge.
+# (AMBIENT_TEMP / TEMP_MIN / TEMP_MAX are defined at the top of elements.py and
+# re-exported here — see the import block above.)
+
+# Diffusion pre-pass tunables. diffuse_temps advances each cell toward the
+# 4-neighborhood average weighted by the cell's OWN conductivity:
+#     new = temp + rate * cond[cell] * (left+right+up+down - 4*temp)
+# Stability of this explicit stencil requires rate * max(cond) <= 0.25; the
+# defaults below (0.20 * 0.5 == 0.10) sit comfortably inside that bound, and
+# diffuse_temps additionally clips the result to [TEMP_MIN, TEMP_MAX].
+DIFFUSION_RATE = 0.20
+
+# Per-material heat conductivity (0.0 = perfect insulator, 1.0 = max). Indexed
+# by element id via build_conductivity_lut(). EMPTY is given a small non-zero
+# value so heat propagates through air (otherwise fire could not warm fuel it
+# is not adjacent to); high-conductivity materials (FIRE, metals) equilibrate
+# fast, insulators (STONE) equilibrate slowly.
+COND_EMPTY = 0.10
+COND_SAND = 0.15
+COND_WATER = 0.35
+COND_STONE = 0.08
+COND_WOOD = 0.12
+COND_FIRE = 0.50
+COND_SMOKE = 0.20
+COND_PLANT = 0.12
 
 # --- Brush / element defaults (Phase 05 will let the user mutate these) -----
 DEFAULT_ELEMENT = ElementId.SAND

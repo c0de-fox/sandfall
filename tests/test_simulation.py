@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 
+from sandfall.brush import paint_brush
 from sandfall.elements import ElementId
 from sandfall.grid import Grid
 from sandfall.simulation import Simulation
@@ -222,3 +223,169 @@ def test_sparse_scan_water_finds_its_level() -> None:
         for x in range(width):
             if water_mask[y, x]:
                 assert grid.get(x, y + 1) != int(ElementId.EMPTY), (x, y)
+
+
+def test_settled_pile_goes_dormant() -> None:
+    """A settled, ambient-temperature sand pile collapses to a dormant active set.
+
+    After settling, no grain moves, no temp changes (uniform ambient), and there
+    are no heat sources -- so the wake set is provably empty and the whole pile
+    is skipped next frame. Pins the headline dormancy win: the active set is the
+    (tiny) movement front, NOT the whole pile.
+    """
+    _seed()
+    width, height = 12, 10
+    grid = Grid(width=width, height=height)
+    for x in range(width):
+        grid.set(x, height - 1, ElementId.STONE)  # floor
+    n_grains = 6
+    for y in range(0, n_grains):
+        grid.set(width // 2, y, ElementId.SAND)  # column above the floor
+    sim = Simulation(grid)
+
+    sim.step()  # bootstrap made every non-empty cell active
+    initial_active = int(grid.active.sum())
+    assert initial_active > 0  # the pile was scanned this frame
+
+    for _ in range(80):
+        sim.step()  # let the pile fully settle
+
+    # No sand lost; all grains supported from below.
+    sand_mask = grid.array == int(ElementId.SAND)
+    assert int(sand_mask.sum()) == n_grains
+    for y in range(height - 1):
+        for x in range(width):
+            if sand_mask[y, x]:
+                assert grid.get(x, y + 1) != int(ElementId.EMPTY), (x, y)
+    # Settled + uniform ambient + no heat source => the active set is empty
+    # (the movement front is zero). This is the dormancy guard.
+    final_active = int(grid.active.sum())
+    assert final_active == 0, final_active
+
+
+def test_eroding_support_wakes_dormant_pile() -> None:
+    """Erasing the floor under a dormant pile wakes it and the grains fall.
+
+    Erasing is done via the brush path (fill_circle), which marks the erased
+    cell's neighborhood active -- including the dormant grain directly above.
+    Next step that grain is scanned, finds the cell below now empty, and falls.
+    (Direct grid.set(x, y, EMPTY) between steps intentionally does NOT wake --
+    only non-empty set marks active; erase-wake is fill_circle's job.)
+    """
+    _seed()
+    width, height = 6, 8
+    grid = Grid(width=width, height=height)
+    for x in range(width):
+        grid.set(x, height - 1, ElementId.STONE)  # floor
+    grid.set(width // 2, height - 2, ElementId.SAND)  # grain resting on floor
+    sim = Simulation(grid)
+
+    for _ in range(10):
+        sim.step()  # grain settled + dormant
+    assert grid.get(width // 2, height - 2) == ElementId.SAND
+    assert not grid.active[height - 2, width // 2]  # dormant
+
+    # Erase the floor cell directly beneath the dormant grain (brush path).
+    grid.fill_circle(width // 2, height - 1, 0, ElementId.EMPTY)
+    sim.step()
+
+    # The grain was woken and fell one row into the opened hole.
+    assert grid.get(width // 2, height - 1) == ElementId.SAND
+    assert grid.get(width // 2, height - 2) == ElementId.EMPTY
+
+
+def test_dormant_water_next_to_lava_flashes_to_steam() -> None:
+    """A dormant (trapped, unmoving) water cell still flashes to STEAM when lava
+    arrives beside it. Lava is a persistent heat source (wake 3), so the lava
+    cell stays scanned and its rule side-effects the adjacent water to steam
+    (lava.py reaction). Dormancy must not starve the reaction.
+    """
+    _seed()
+    width, height = 4, 3
+    grid = Grid(width=width, height=height)
+    for x in range(width):
+        grid.set(x, height - 1, ElementId.STONE)  # floor
+    grid.set(0, 1, ElementId.STONE)  # left wall
+    grid.set(2, 1, ElementId.STONE)  # right wall (becomes lava later)
+    grid.set(1, 1, ElementId.WATER)  # trapped water: cannot move
+    sim = Simulation(grid)
+
+    for _ in range(5):
+        sim.step()  # water trapped -> dormant
+    assert grid.get(1, 1) == ElementId.WATER
+    assert not grid.active[1, 1]  # water dormant
+
+    # Lava arrives beside the dormant water (paint_brush sets spawn_temp=1500).
+    paint_brush(grid, 2, 1, 0, ElementId.LAVA)
+    sim.step()
+
+    # The lava reacted with the adjacent water: water -> STEAM, lava -> STONE.
+    assert grid.get(1, 1) == ElementId.STEAM
+    assert grid.get(2, 1) == ElementId.STONE
+
+
+def test_dormant_wood_next_to_fire_ignites() -> None:
+    """A dormant (static) wood cell next to fire ignites to FIRE.
+
+    Wood ignites when its OWN temp exceeds flashpoint (wood.py), so the wood
+    cell MUST be scanned. Fire is a persistent heat source (wake 3) and clings
+    to flammable neighbors (fire.py), so the wood stays awake across steps,
+    heats via diffusion, and ignites. Pins that dormancy does not pin a cell
+    that a heat source is actively heating.
+    """
+    _seed()
+    width, height = 5, 4
+    grid = Grid(width=width, height=height)
+    for x in range(width):
+        grid.set(x, height - 1, ElementId.STONE)  # floor
+    grid.set(1, height - 2, ElementId.WOOD)  # static wood
+    sim = Simulation(grid)
+
+    for _ in range(5):
+        sim.step()  # wood is static -> dormant
+    assert grid.get(1, height - 2) == ElementId.WOOD
+    assert not grid.active[height - 2, 1]  # wood dormant
+
+    # Fire appears directly beside the dormant wood (paint_brush seeds fire life).
+    paint_brush(grid, 2, height - 2, 0, ElementId.FIRE)
+
+    # Fire clings to the flammable wood and heats it; once the wood's temp
+    # crosses flashpoint it ignites. Detect the moment of ignition (the cell
+    # becomes FIRE); robust to the fire later rising away.
+    ignited = False
+    for _ in range(60):
+        sim.step()
+        if grid.get(1, height - 2) == ElementId.FIRE:
+            ignited = True
+            break
+    assert ignited, "dormant wood next to fire never ignited"
+
+
+def test_painting_into_dormant_region_wakes_it() -> None:
+    """Painting a cell into a dormant (empty) region wakes it so it is scanned.
+
+    After a pile settles and the scene goes dormant, painting a single sand
+    grain high above must mark it active (fill_circle) so the next step scans
+    and drops it -- dormancy must not pin freshly painted cells.
+    """
+    _seed()
+    width, height = 8, 8
+    grid = Grid(width=width, height=height)
+    for x in range(width):
+        grid.set(x, height - 1, ElementId.STONE)  # floor
+    for y in range(0, 2):
+        grid.set(width // 2, y, ElementId.SAND)  # small pile
+    sim = Simulation(grid)
+
+    for _ in range(40):
+        sim.step()  # pile settles -> dormant
+    assert int((grid.array == int(ElementId.SAND)).sum()) == 2
+
+    # Paint one sand grain at the top of the dormant region.
+    grid.fill_circle(width // 2, 0, 0, ElementId.SAND)
+    assert grid.active[0, width // 2]  # the brush woke it
+    sim.step()
+
+    # The painted grain was scanned and fell one row (dormancy did not pin it).
+    assert grid.get(width // 2, 0) == ElementId.EMPTY
+    assert grid.get(width // 2, 1) == ElementId.SAND

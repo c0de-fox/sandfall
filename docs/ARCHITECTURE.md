@@ -102,15 +102,54 @@ with equal probability, to avoid a leftward bias):
 4. Call the rule. If it returns a destination `(dx, dy)`, mark
    `moved[dy, dx] = True` so that cell is not processed again this frame.
 
-The x scan is **sparse**: instead of iterating the full `range(width)` of each
-row, the scan computes the non-empty x indices of each row with
-`np.nonzero(row)[0]` and visits only those. An entirely-empty row is skipped
-in a single numpy call. This is a performance optimization only — empty cells
-were no-ops before (step 2 above just `continue`d), so the result is
-**identical** to the old full-row scan. (Because the scan now reads the raw
-`grid.array` directly, a cheap mid-scan re-check re-reads the cell and skips
-it if it emptied/transformed earlier in the same scan.) The heat-diffusion
-pre-pass is unchanged — it is already one whole-grid vectorized op.
+The x scan is **dormant-cell-aware (active-region)**: instead of iterating
+the full `range(width)` of each row, the scan computes the x indices that
+are BOTH **active** AND non-empty with `np.nonzero(active[y] & (row != 0))[0]`
+and visits only those. A cell whose `active` flag is False is *dormant* — it
+provably cannot move or react next frame (nothing in its world changed) and
+is skipped. An entirely-inactive row is skipped in a single numpy call. This
+is a performance optimization only — a dormant cell's rule, when dispatched,
+returned "no move" and drew no RNG, so the result is **identical** to the old
+full-row scan. (Because the scan reads the raw `grid.array` directly, a cheap
+mid-scan re-check re-reads the cell and skips it if it emptied/transformed
+earlier in the same scan.) The heat-diffusion pre-pass stays whole-grid and
+unchanged — it is one numpy op over the `(H, W)` `int16` field, and it MUST
+stay whole-grid so dormant cells' temperatures still propagate (a heat source
+reaching a dormant cell raises its temp, which wakes it).
+
+Each `step` rebuilds the `active` array from scratch (an **overwrite**, not
+`|=` — carrying the old set forward would let cells marked once stay active
+forever and never sleep) from four **wake conditions**; a cell firing none
+of them goes dormant:
+
+1. **Movement / identity-change + dilation** — a cell that moved, changed
+   identity (`data != data_before`), or is orthogonally adjacent to one
+   (one-cell 4-neighborhood dilation), so eroding support / opening a hole
+   wakes the cells above/beside to fall/flow.
+2. **Temperature change** — a cell whose temperature changed (via diffusion
+   or a rule) must be rescanned: phase transitions (water boil/freeze, wood
+   ignite) check the cell's OWN temperature.
+3. **FIRE / LAVA persistent heat sources + their neighborhood** — a clinging
+   fire / a lava cell re-asserts its burn-temp and reacts each step but may
+   neither move nor change identity nor (at burn-temp) change temp; without
+   this rule fire/lava and their fuel neighbors would go dormant and
+   combustion/reactions would never chain.
+4. **Brush-painted / erased cells** — OR-marked into `active` between steps
+   by `Grid.fill_circle` (the brush path) and consumed by the next scan; they
+   are not carried into the next `active` set unless the sim dynamics woke
+   them. (Erasing opens a hole; `fill_circle` marks the erased cell's
+   neighborhood so the cells beside/above wake and fall/flow into it.)
+
+`Grid.set` deliberately does NOT mark `active`: it sits on the hottest path
+(`swap` calls it twice per move) and regressed a maximally-busy scene by
+~30%. Wake correctness is fully preserved without it — `id_changed` (wake 1)
+captures every cell `set` touched *during* a scan, the `Simulation.__init__`
+bootstrap seeds the first frame from all non-empty cells, and `fill_circle`
+marks the brush path. The net effect: a settled ~7,300-grain sand pile drops
+from ~73 ms/frame to ~5–7 ms/frame (the movement front is ~0 once settled),
+while a maximally-busy scene is roughly break-even with the prior scan
+(everything is already active, so there is nothing to skip — the busy-scene
+win is a separate, out-of-scope faster-rules lever).
 
 ## Temperature field
 

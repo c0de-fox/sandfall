@@ -47,7 +47,7 @@ from .config import (
 )
 from .control import LoopController
 from .elements import ElementId
-from .grid import Grid, migrate_grid
+from .grid import BrushShape, Grid, migrate_grid
 from .renderer import Renderer
 from .simulation import Simulation
 from .ui import UI, ToolId
@@ -85,6 +85,9 @@ class Game:
     # can mutate it directly.
     selected_element: ElementId
     brush_radius: int
+    # Current brush footprint shape (Phase 02). Cycled by Tab and the
+    # Brush-shape palette button (Disk <-> Square).
+    brush_shape: BrushShape
     _running: bool
     # Current window size in pixels (starts at INITIAL_*; updated on resize).
     _window_w: int
@@ -120,6 +123,7 @@ class Game:
         self._loop = LoopController()
         self.selected_element = DEFAULT_ELEMENT
         self.brush_radius = DEFAULT_BRUSH_RADIUS
+        self.brush_shape = BrushShape.DISK
         self._running = False
         self._window_w = INITIAL_WINDOW_W
         self._window_h = INITIAL_WINDOW_H
@@ -168,6 +172,11 @@ class Game:
                     # surface is swapped; the palette + HUD stay visible so
                     # the player can still select elements while viewing heat.
                     self._heat_overlay = not self._heat_overlay
+                elif event.key == pygame.K_TAB:
+                    # Cycle the brush footprint shape (Disk <-> Square). The
+                    # Brush-shape palette button does the same via the shared
+                    # _cycle_brush_shape helper (DRY).
+                    self._cycle_brush_shape()
             elif event.type == pygame.MOUSEWHEEL:
                 # event.y is +1 for scroll-up, -1 for scroll-down (pygame-ce).
                 # Scroll-up grows the brush.
@@ -194,13 +203,25 @@ class Game:
                         # Eraser maps to EMPTY so left-drag erases (preserved).
                         self.selected_element = ElementId.EMPTY
                     elif item.tool == ToolId.BRUSH_SHAPE:
-                        pass  # Wired in Phase 02 (brush-shape cycle).
+                        # Cycle the brush footprint shape (Disk <-> Square).
+                        # Shares the Tab handler's logic via the helper (DRY).
+                        self._cycle_brush_shape()
                     elif item.tool == ToolId.MAGNIFY:
                         pass  # Wired in Phase 03 (magnifier toggle).
             # NOTE: no VIDEORESIZE branch. Window resize is detected by polling
             # self._window.size every frame in _apply_resize_if_changed(); that
             # path is event-driver-independent and never recreates the window
             # (the pygame.Window API does not need a set_mode call on resize).
+
+    def _cycle_brush_shape(self) -> None:
+        """Advance the brush footprint shape to the next :class:`BrushShape`.
+
+        Cycles Disk <-> Square in enum-definition order, wrapping at the end.
+        Shared by the ``Tab`` key and the Brush-shape palette button so the
+        two cycling paths can never drift apart.
+        """
+        shapes = list(BrushShape)
+        self.brush_shape = shapes[(shapes.index(self.brush_shape) + 1) % len(shapes)]
 
     def _apply_resize_if_changed(self) -> None:
         """Detect the window has resized and rebuild the grid + UI to match.
@@ -249,7 +270,14 @@ class Game:
         if self._ui.in_reserved_area(mx, my):
             return
         gx, gy = mx // CELL_SIZE, my // CELL_SIZE
-        paint_brush(self._grid, gx, gy, self.brush_radius, self.selected_element)
+        paint_brush(
+            self._grid,
+            gx,
+            gy,
+            self.brush_radius,
+            self.selected_element,
+            self.brush_shape,
+        )
 
     def _erase_if_dragging(self) -> None:
         """Erase (paint EMPTY) under the cursor while the RIGHT button is held.
@@ -269,7 +297,9 @@ class Game:
         if self._ui.in_reserved_area(mx, my):
             return
         gx, gy = mx // CELL_SIZE, my // CELL_SIZE
-        paint_brush(self._grid, gx, gy, self.brush_radius, ElementId.EMPTY)
+        paint_brush(
+            self._grid, gx, gy, self.brush_radius, ElementId.EMPTY, self.brush_shape
+        )
 
     def _draw(self) -> None:
         # The grid renders to a (grid.width x grid.height) surface and is
@@ -300,4 +330,5 @@ class Game:
             self.brush_radius,
             self._loop.paused,
             count,
+            self.brush_shape,
         )

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from sandfall.elements import ElementId
-from sandfall.grid import Grid, migrate_grid
+from sandfall.grid import BrushShape, Grid, migrate_grid
 
 
 def test_construction_and_shape() -> None:
@@ -118,6 +118,37 @@ def test_fill_circle_negative_radius_raises() -> None:
     grid = Grid(width=5, height=5)
     with pytest.raises(ValueError):
         grid.fill_circle(2, 2, -1, ElementId.SAND)
+
+
+def test_fill_circle_square_paints_whole_bounding_box() -> None:
+    """SQUARE shape paints the whole bbox (corners included); DISK does not.
+
+    The defaulted ``shape`` param keeps every existing disk call site green;
+    this additive test pins the SQUARE contract: every cell in
+    [cx-r, cx+r] x [cy-r, cy+r] is painted, life is reset to 0, and temp is
+    reset to AMBIENT (mirroring the disk contract on the wider footprint).
+    """
+    from sandfall.config import AMBIENT_TEMP
+
+    grid = Grid(width=20, height=20)
+    grid.fill_circle(10, 10, 3, ElementId.SAND, BrushShape.SQUARE)
+    # Every cell in the bbox is painted (corners included).
+    for y in range(10 - 3, 10 + 4):
+        for x in range(10 - 3, 10 + 4):
+            assert grid.get(x, y) == ElementId.SAND, (x, y)
+    # Life + temp reset on the whole square (mirrors disk contract).
+    assert grid.get_life(10 - 3, 10 - 3) == 0
+    assert grid.get_temp(10 - 3, 10 - 3) == AMBIENT_TEMP
+    # And the square strictly contains the disk: a SQUARE paint paints at
+    # least every cell a DISK paint would (the corners are the extra cells).
+    disk_grid = Grid(width=20, height=20)
+    disk_grid.fill_circle(10, 10, 3, ElementId.SAND)  # default DISK
+    disk_mask = disk_grid.array == int(ElementId.SAND)
+    square_mask = grid.array == int(ElementId.SAND)
+    assert int(square_mask.sum()) == 7 * 7  # full 7x7 bbox
+    assert int(disk_mask.sum()) < int(square_mask.sum())  # disk < square
+    # DISK did not paint a corner that SQUARE did.
+    assert disk_grid.get(10 - 3, 10 - 3) == ElementId.EMPTY
 
 
 def test_life_array_defaults_to_zero() -> None:

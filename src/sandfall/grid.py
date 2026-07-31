@@ -39,10 +39,29 @@ returned "no move"), so skipping them changes nothing observable.
 
 from __future__ import annotations
 
+import enum
+
 import numpy as np
 import numpy.typing as npt
 
 from .elements import AMBIENT_TEMP, TEMP_MAX, TEMP_MIN, ElementId
+
+
+class BrushShape(enum.Enum):
+    """The footprint shape of a brush stroke.
+
+    DISK paints every cell whose Euclidean distance from the center is <=
+    radius (a filled circle). SQUARE paints the whole axis-aligned bounding
+    box ``[cx-radius, cx+radius] x [cy-radius, cy+radius]`` (a filled square
+    whose half-side is ``radius``). Defined here (not in ``brush.py``) because
+    :meth:`Grid.fill_circle` branches on it; ``brush.py`` imports from
+    ``grid`` already so it picks :class:`BrushShape` up for free and ``grid``
+    never imports from ``brush`` (which would close an import cycle:
+    ``brush -> grid -> brush``).
+    """
+
+    DISK = enum.auto()
+    SQUARE = enum.auto()
 
 
 class Grid:
@@ -216,17 +235,30 @@ class Grid:
         self._temp[y, x] = value
 
     def fill_circle(
-        self, cx: int, cy: int, radius: int, element_id: ElementId | int
+        self,
+        cx: int,
+        cy: int,
+        radius: int,
+        element_id: ElementId | int,
+        shape: BrushShape = BrushShape.DISK,
     ) -> None:
-        """Fill every cell within ``radius`` (Euclidean disk) of ``(cx, cy)``.
+        """Fill every cell within ``radius`` of ``(cx, cy)``.
 
-        Cells outside the grid are silently clipped. ``radius == 0`` paints a
-        single cell. ``radius < 0`` raises ``ValueError``. Painted cells have
+        ``shape`` selects the footprint: DISK (the default) paints the
+        Euclidean disk (``dx*dx + dy*dy <= radius*radius``); SQUARE paints the
+        whole axis-aligned bounding box ``[cx-radius, cx+radius] x
+        [cy-radius, cy+radius]`` (corners included). For ``radius == 0`` both
+        shapes paint a single cell. Cells outside the grid are silently
+        clipped. ``radius < 0`` raises ``ValueError``. Painted cells have
         their life reset to 0 and their temperature reset to
         ``AMBIENT_TEMP`` (brushes that overwrite a burning cell should not
         leave stale life or heat behind); callers painting FIRE/SMOKE should
         seed life afterwards, and callers wanting a hot spawn-temp should set
         it afterwards, if they want either to persist.
+
+        (The name ``fill_circle`` is legacy now that SQUARE is supported; it
+        is kept so the 8 existing test call sites + the prod caller keep
+        working unchanged via the defaulted ``shape`` param.)
         """
         if radius < 0:
             raise ValueError(f"radius must be non-negative ({radius=})")
@@ -246,7 +278,8 @@ class Grid:
             dy = y - cy
             for x in range(x0, x1 + 1):
                 dx = x - cx
-                if dx * dx + dy * dy <= r2:
+                # SQUARE paints the whole bbox; DISK keeps the radius test.
+                if shape == BrushShape.SQUARE or dx * dx + dy * dy <= r2:
                     self._data[y, x] = eid
                     self._life[y, x] = 0
                     self._temp[y, x] = AMBIENT_TEMP

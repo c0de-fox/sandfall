@@ -47,17 +47,21 @@ the starting size).
 | **Click a palette swatch** | Select that element. |
 | **Eraser swatch** | Select the Eraser (rightmost swatch) so left-drag erases instead of painting. |
 | **Mouse wheel** | Grow / shrink the brush radius (range 1–20). Scroll up to grow. |
+| **Tab** | Cycle the brush footprint shape: **Disk** ↔ **Square** (the Brush-shape palette button does the same). |
 | **Resize window** | Drag the window border to resize the playfield. The grid grows/shrinks in whole 4px cells; content outside the new area is **lost permanently** (only the top-left overlap is preserved). The 40px palette bar stays pinned to the bottom; an enforced minimum size keeps the palette usable. |
 | **Space** | Pause / resume the simulation. |
 | **N** | Advance exactly one step while paused (no-op while running). |
 | **H** | Toggle the heat-map overlay (blue = cold, red = hot; ambient is neutral). The element palette and HUD stay visible, so you can still select elements while watching heat flow. |
 | **Esc / close window** | Quit. |
 
-Defaults: the selected element is **Sand**, and the brush radius is **3**.
+Defaults: the selected element is **Sand**, the brush radius is **3**, and the
+brush shape is **Disk**.
 
 The top-left HUD shows the current FPS and brush radius. A red **PAUSED**
 indicator appears centered at the top when the simulation is paused. The
-active palette swatch is outlined in white.
+active palette swatch is outlined in white. An always-on **cursor outline**
+(circle for Disk, square for Square, sized to the brush radius) shows exactly
+where the brush will land; it hides while the cursor is over the palette strip.
 
 ## Requirements
 
@@ -125,7 +129,7 @@ src/sandfall/
   simulation.py            # Simulation.step: heat-diffusion pre-pass + scan + moved guard
   thermal.py               # diffuse_temps (heat pre-pass) + thermal_to_rgb (heat overlay)
   renderer.py              # Grid -> RGB via color LUT -> grid-sized Surface (+ render_heat)
-  brush.py                 # paint_brush: disk paint + life + temp_spawn seeding
+  brush.py                 # paint_brush: disk/square paint + life + temp_spawn seeding
   control.py               # LoopController: pause / single-step state machine
   ui.py                    # palette layout + HUD (FPS, brush radius, paused)
   rules/

@@ -6,9 +6,10 @@ The *layout* (which palette entry goes where on screen) is split from the
 either an element swatch or a tool button); hit-testing (:meth:`UI.item_at`) is
 pure too. The :data:`TOOL_TOOLTIPS` mapping and the element/tool tooltip text
 are pure as well. All three are unit-tested headlessly in ``tests/test_ui.py``.
-The :class:`UI` draw method does the pygame rendering (including hover tooltips
-+ the dimmed placeholder buttons) and is verified manually via the running
-window / the ``SANDFALL_FRAMES`` seam.
+The :class:`UI` draw method does the pygame rendering (hover tooltips, the
+enabled Brush-shape button + its footprint glyph, the always-on cursor
+outline, the dimmed Magnifier placeholder) and is verified manually via the
+running window / the ``SANDFALL_FRAMES`` seam.
 
 Pygame is imported lazily inside :meth:`UI.draw` so importing this module (and
 therefore the pure helpers) does not require a pygame runtime — important for
@@ -22,6 +23,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .config import (
+    CELL_SIZE,
     ERASER_LABEL,
     ERASER_SWATCH_BORDER,
     ERASER_SWATCH_COLOR,
@@ -38,6 +40,7 @@ from .config import (
     PAUSED_COLOR,
 )
 from .elements import ELEMENTS, ElementId
+from .grid import BrushShape
 
 if TYPE_CHECKING:
     # Annotations only (PEP 563): pygame is not imported at runtime here.
@@ -120,8 +123,8 @@ def palette_layout(window_width: int, bar_y: int) -> list[PaletteItem]:
 
     Pure: no pygame -> unit-tested headlessly. The Eraser is a TOOL here (not
     an element swatch); Game maps selecting it to ``selected_element = EMPTY``
-    so left-drag still erases. Brush-shape and Magnifier ship as placeholders
-    (Phase 01); their dispatch is wired in Phases 02/03.
+    so left-drag still erases. Brush-shape dispatch is wired (Phase 02, cycles
+    Disk/Square); Magnifier remains a placeholder until Phase 03.
     """
     del window_width  # reserved for future layouts; not needed for the v1 row.
     items: list[PaletteItem] = []
@@ -245,13 +248,16 @@ class UI:
         brush_radius: int,
         paused: bool,
         count: int,
+        brush_shape: BrushShape = BrushShape.DISK,
     ) -> None:
         """Render the palette + HUD onto ``screen``.
 
         ``active`` is the currently selected element (its swatch is
         outlined). ``fps``/``brush_radius``/``count`` are shown top-left
         (``count`` is the number of non-empty cells); ``paused`` toggles the
-        centered PAUSED indicator.
+        centered PAUSED indicator. ``brush_shape`` drives the Brush-shape
+        button glyph (circle for DISK, square for SQUARE) and the always-on
+        cursor footprint outline drawn over the sim area.
         """
         import pygame  # local: keeps module import pygame-free for the pure helpers
 
@@ -284,41 +290,79 @@ class UI:
                 assert item.element_id is not None  # is_element guarantees this
                 pygame.draw.rect(screen, ELEMENTS[item.element_id].color, rect)
             else:
-                # Tool button. Eraser is functional; Brush-shape and Magnifier
-                # are Phase-01 placeholders rendered DIMMED so a click that does
-                # nothing is not mistaken for a bug (their dispatch arrives in
-                # Phase 02/03). Placeholder styling pinned in the phase
-                # reflection: dim fill + dark border + muted glyph.
+                # Tool button. Eraser and Brush-shape are functional; Magnifier
+                # is still a Phase-01 placeholder rendered DIMMED so a click
+                # that does nothing is not mistaken for a bug (its dispatch
+                # arrives in Phase 03). Placeholder styling pinned in the
+                # Phase-01 reflection: dim fill + dark border + muted glyph.
                 assert item.tool is not None
-                if item.tool == ToolId.ERASER:
-                    fill, border, glyph, glyph_color = (
-                        ERASER_SWATCH_COLOR,
-                        ERASER_SWATCH_BORDER,
-                        ERASER_LABEL,
-                        ERASER_SWATCH_BORDER,
+                if item.tool == ToolId.BRUSH_SHAPE:
+                    # Enabled tool reflecting the CURRENT brush footprint
+                    # shape: a circle outline (DISK) or square outline
+                    # (SQUARE) drawn with pygame.draw inside the swatch.
+                    # Cleaner than a font glyph and reads the shape at a
+                    # glance; click/Tab cycles it. Always highlighted (it is
+                    # always the current shape) via the active-outline block
+                    # below. Styling pinned in the Phase-02 reflection:
+                    # medium-gray fill + bright border + white shape outline.
+                    fill = (70, 70, 80)
+                    border = (180, 180, 190)
+                    pygame.draw.rect(screen, fill, rect)
+                    pygame.draw.rect(screen, border, rect, 1)
+                    inset = item.w // 4  # glyph inset within the swatch
+                    if brush_shape == BrushShape.SQUARE:
+                        pygame.draw.rect(
+                            screen,
+                            HIGHLIGHT_COLOR,
+                            (
+                                item.x + inset,
+                                item.y + inset,
+                                item.w - 2 * inset,
+                                item.h - 2 * inset,
+                            ),
+                            2,
+                        )
+                    else:  # DISK
+                        pygame.draw.circle(
+                            screen,
+                            HIGHLIGHT_COLOR,
+                            (item.x + item.w // 2, item.y + item.h // 2),
+                            item.w // 2 - inset,
+                            2,
+                        )
+                else:
+                    if item.tool == ToolId.ERASER:
+                        fill, border, glyph, glyph_color = (
+                            ERASER_SWATCH_COLOR,
+                            ERASER_SWATCH_BORDER,
+                            ERASER_LABEL,
+                            ERASER_SWATCH_BORDER,
+                        )
+                    else:  # MAGNIFY placeholder (dimmed).
+                        glyph = "Z"
+                        fill = (55, 55, 60)
+                        border = (35, 35, 40)
+                        glyph_color = (120, 120, 130)
+                    pygame.draw.rect(screen, fill, rect)
+                    pygame.draw.rect(screen, border, rect, 1)
+                    assert self._font is not None
+                    label = self._font.render(glyph, True, glyph_color)
+                    screen.blit(
+                        label,
+                        (
+                            item.x + (item.w - label.get_width()) // 2,
+                            item.y + (item.h - label.get_height()) // 2,
+                        ),
                     )
-                else:  # BRUSH_SHAPE / MAGNIFY placeholders (dimmed).
-                    glyph = "B" if item.tool == ToolId.BRUSH_SHAPE else "Z"
-                    fill = (55, 55, 60)
-                    border = (35, 35, 40)
-                    glyph_color = (120, 120, 130)
-                pygame.draw.rect(screen, fill, rect)
-                pygame.draw.rect(screen, border, rect, 1)
-                assert self._font is not None
-                label = self._font.render(glyph, True, glyph_color)
-                screen.blit(
-                    label,
-                    (
-                        item.x + (item.w - label.get_width()) // 2,
-                        item.y + (item.h - label.get_height()) // 2,
-                    ),
-                )
             # Active outline: element items highlight on their id; the Eraser
             # tool highlights when EMPTY is the selected element (so
-            # left-drag-erase keeps its highlight). Placeholders are never
-            # active in Phase 01.
-            is_active = (item.is_element and item.element_id == active) or (
-                item.tool == ToolId.ERASER and active == ElementId.EMPTY
+            # left-drag-erase keeps its highlight); the Brush-shape tool is
+            # ALWAYS highlighted (it always reflects the current shape). The
+            # Magnifier placeholder is never active until Phase 03.
+            is_active = (
+                (item.is_element and item.element_id == active)
+                or (item.tool == ToolId.ERASER and active == ElementId.EMPTY)
+                or item.tool == ToolId.BRUSH_SHAPE
             )
             if is_active:
                 pygame.draw.rect(screen, HIGHLIGHT_COLOR, rect, 2)
@@ -339,3 +383,31 @@ class UI:
             )
             ty = self._bar_y - tip.get_height() - 2
             screen.blit(tip, (tx, ty))
+
+        # Always-on brush cursor outline (Phase 02): shows the footprint
+        # (circle for DISK, square for SQUARE) at radius * CELL_SIZE px around
+        # the cursor, so the player is not painting blind. Hidden over the
+        # reserved palette area (so dragging over swatches shows no stray
+        # outline). Geometry mirrors the paint footprint exactly: the bbox of
+        # a brush of radius r centered on cell (gx, gy) spans
+        # [gx-r, gx+r] x [gy-r, gy+r] cells -> screen px
+        # [(gx-r)*CELL_SIZE, (gx+r+1)*CELL_SIZE). The DISK outline is a circle
+        # enclosing that same bbox; the SQUARE outline IS the bbox. Visual
+        # only (verified via SANDFALL_FRAMES, not pixel-asserted), like all
+        # UI.draw rendering. Color/weight pinned in the Phase-02 reflection:
+        # HIGHLIGHT_COLOR (white), width 1.
+        if not self.in_reserved_area(mx, my):
+            gx, gy = mx // CELL_SIZE, my // CELL_SIZE
+            left = (gx - brush_radius) * CELL_SIZE
+            top = (gy - brush_radius) * CELL_SIZE
+            size = (2 * brush_radius + 1) * CELL_SIZE
+            if brush_shape == BrushShape.SQUARE:
+                pygame.draw.rect(screen, HIGHLIGHT_COLOR, (left, top, size, size), 1)
+            else:  # DISK -- a circle enclosing the same bbox.
+                pygame.draw.circle(
+                    screen,
+                    HIGHLIGHT_COLOR,
+                    (left + size // 2, top + size // 2),
+                    size // 2,
+                    1,
+                )

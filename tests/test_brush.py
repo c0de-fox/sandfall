@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import random
 
+import numpy as np
 import pytest
 
 from sandfall.brush import paint_brush
 from sandfall.elements import ElementId
-from sandfall.grid import Grid
+from sandfall.grid import BrushShape, Grid
 from sandfall.rules import seed_fire_life, seed_smoke_life
 
 # Lifetime windows mirrored from rules/_common.py (single source of truth is
@@ -205,3 +206,62 @@ def test_paint_brush_overwrites_stale_temp() -> None:
 
     assert grid.get(5, 5) == ElementId.FIRE
     assert grid.get_temp(5, 5) == 800  # FIRE.temp_spawn
+
+
+# --- Brush shape: Disk / Square (Phase 02) ----------------------------------
+
+
+def test_paint_brush_square_paints_bounding_box_corners() -> None:
+    """SQUARE paints the whole bbox; DISK does not paint the corners.
+
+    A disk of radius 3 leaves the four bbox corners EMPTY (the corner cell is
+    at distance sqrt(18) > 3 from the center); a square paints them. This is
+    the defining behavioral difference between the two shapes.
+    """
+    grid = Grid(20, 20)
+    paint_brush(grid, 10, 10, 3, ElementId.SAND, BrushShape.SQUARE)
+    # The four bbox corners are painted for SQUARE...
+    assert grid.get(10 - 3, 10 - 3) == ElementId.SAND
+    assert grid.get(10 + 3, 10 + 3) == ElementId.SAND
+    assert grid.get(10 - 3, 10 + 3) == ElementId.SAND
+    assert grid.get(10 + 3, 10 - 3) == ElementId.SAND
+    # ...but a DISK of the same radius does NOT paint the corners.
+    grid2 = Grid(20, 20)
+    paint_brush(grid2, 10, 10, 3, ElementId.SAND, BrushShape.DISK)
+    assert grid2.get(10 - 3, 10 - 3) == ElementId.EMPTY
+
+
+def test_paint_brush_square_fire_seeds_corner_life() -> None:
+    """The seeding pass must cover the SQUARE bbox, not just the disk.
+
+    Regression guard (Decision Log #9): without the shape-aware seeding walk,
+    painted FIRE in a square's corner would have life 0 and expire on the next
+    step. (Phase 04 fixed this for the disk; this test pins it for the square.)
+    Also asserts the hot spawn-temp reaches the corner (temp seeding must
+    cover the bbox too).
+    """
+    from sandfall.elements import ELEMENTS
+
+    grid = Grid(20, 20)
+    paint_brush(grid, 10, 10, 3, ElementId.FIRE, BrushShape.SQUARE)
+    # A bbox corner must be FIRE with seeded life in range AND hot spawn-temp.
+    cx, cy = 10 - 3, 10 - 3
+    assert grid.get(cx, cy) == ElementId.FIRE
+    assert FIRE_LIFE_MIN <= grid.get_life(cx, cy) <= FIRE_LIFE_MAX
+    assert grid.get_temp(cx, cy) == ELEMENTS[ElementId.FIRE].temp_spawn
+
+
+def test_paint_brush_disk_is_unchanged_by_shape_param() -> None:
+    """The defaulted DISK shape is byte-identical to the pre-shape behavior.
+
+    Passing no shape (the default) and passing BrushShape.DISK explicitly
+    must produce identical id/life/temp arrays -- the new param is purely
+    additive for the disk path (no regression surface for existing callers).
+    """
+    g1 = Grid(20, 20)
+    g2 = Grid(20, 20)
+    paint_brush(g1, 10, 10, 3, ElementId.SAND)  # default (no shape arg)
+    paint_brush(g2, 10, 10, 3, ElementId.SAND, BrushShape.DISK)  # explicit
+    assert np.array_equal(g1.array, g2.array)
+    assert np.array_equal(g1.life, g2.life)
+    assert np.array_equal(g1.temp, g2.temp)

@@ -207,6 +207,36 @@ temp on every move; `Grid.fill_circle` resets temp to `AMBIENT_TEMP`
 temp overlap on resize. One new array, the same seams. The diffusion
 pre-pass is the only writer that touches the whole array at once.
 
+### Brush shapes (Disk / Square)
+
+`BrushShape` is an enum defined in `grid.py` (not `brush.py`) with two
+members, `DISK` and `SQUARE`. It lives next to `Grid.fill_circle` — the
+primitive that branches on it — so `brush.py` (which already imports from
+`grid`) picks it up for free and `grid` never imports from `brush` (which
+would close the `brush → grid → brush` cycle).
+
+`Grid.fill_circle` gained a defaulted `shape: BrushShape = BrushShape.DISK`
+parameter (the name is kept legacy so all 8 existing test call sites and the
+prod caller stay green untouched): `DISK` paints the Euclidean disk
+(`dx*dx + dy*dy <= radius*radius`); `SQUARE` skips that test and paints the
+whole bounding box `[cx-r, cx+r] × [cy-r, cy+r]` (corners included). For
+`radius == 0` both shapes paint a single cell. `_mark_active_disk` is
+unchanged — it marks the bbox ⊕ 1-neighborhood, which is exactly correct for
+the square (its footprint *is* its bbox) and unchanged for the disk.
+
+`brush.paint_brush` threads `shape` through to `fill_circle` **and** branches
+its own temp/life seeding pass on it. That second branch is the correctness
+crux: the seeding loop walks the footprint a second time to set `temp_spawn`
+and seed FIRE/SMOKE/STEAM life. For `SQUARE` it walks the whole bbox; without
+that, a painted FIRE/SMOKE/STEAM in a square's *corner* would have life 0 and
+expire on the next step (the classic "painted fire dies instantly" bug
+resurfacing for the square). A dedicated regression test
+(`test_paint_brush_square_fire_seeds_corner_life`) pins it. `Game.brush_shape`
+holds the state; `Tab` and the Brush-shape palette button both cycle it via
+the shared `Game._cycle_brush_shape` helper, and an always-on cursor outline
+(circle for DISK, square for SQUARE, sized to `radius · CELL_SIZE`) is drawn
+over the sim area and hidden over the palette strip.
+
 ## The element model
 
 Defined in `elements.py`:

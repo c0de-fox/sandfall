@@ -112,6 +112,18 @@ COND_ICE = 0.18
 COND_LAVA = 0.45
 COND_GLASS = 0.10
 
+# --- Heat-overlay display band (Phase 04) -----------------------------------
+# ``thermal.thermal_to_rgb`` maps the temp field's full color span across
+# ``[HEAT_VIZ_COLD, HEAT_VIZ_HOT]``; temperatures outside the band saturate to
+# the endpoint color (deep blue / red). The band is deliberately asymmetric
+# around AMBIENT_TEMP (20): the interesting *hot* behavior (fire ~800, lava
+# ~1500) spans a much wider range than the cold behavior (ice / sub-zero), so
+# the hot side gets more of the color ramp. AMBIENT_TEMP is the neutral pivot
+# of the gradient on BOTH sides, so an all-ambient scene reads as a flat
+# 'no thermal activity' gray rather than a tinted one.
+HEAT_VIZ_COLD = -40
+HEAT_VIZ_HOT = 1000
+
 # --- Brush / element defaults (Phase 05 will let the user mutate these) -----
 DEFAULT_ELEMENT = ElementId.SAND
 DEFAULT_BRUSH_RADIUS = 3

@@ -12,9 +12,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from sandfall.config import AMBIENT_TEMP, TEMP_MAX
+from sandfall.config import AMBIENT_TEMP, HEAT_VIZ_COLD, HEAT_VIZ_HOT, TEMP_MAX
 from sandfall.elements import ElementId
-from sandfall.thermal import build_conductivity_lut, diffuse_temps
+from sandfall.thermal import build_conductivity_lut, diffuse_temps, thermal_to_rgb
 
 
 def test_heat_flows_hot_to_cold() -> None:
@@ -99,3 +99,60 @@ def test_build_conductivity_lut_shape_and_values() -> None:
     # adds the new ids' rows).
     for eid in ElementId:
         assert 0.0 <= lut[int(eid)] <= 1.0
+
+
+# --- Heat-overlay gradient (Phase 04) ---------------------------------------
+# thermal_to_rgb is a pure numpy map from the int16 temp field to an
+# (H, W, 3) uint8 image (blue -> cyan -> neutral -> yellow -> red). These
+# tests pin its contract headlessly: shape/dtype, the cold/blue vs hot/red
+# ordering, saturation without overflow outside the display band, and that
+# ambient reads as a truly neutral gray (the gradient's design pivot).
+
+
+def test_thermal_to_rgb_shape_and_dtype() -> None:
+    temp = np.full((4, 5), 20, dtype=np.int16)
+    rgb = thermal_to_rgb(temp)
+    assert rgb.shape == (4, 5, 3)
+    assert rgb.dtype == np.uint8
+
+
+def test_thermal_to_rgb_hot_is_redder_than_cold() -> None:
+    cold = np.full((1, 1), HEAT_VIZ_COLD, dtype=np.int16)
+    hot = np.full((1, 1), HEAT_VIZ_HOT, dtype=np.int16)
+    rc = thermal_to_rgb(cold)[0, 0]
+    rh = thermal_to_rgb(hot)[0, 0]
+    assert rh[0] > rc[0]  # hot has more red
+    assert rc[2] > rh[2]  # cold has more blue
+
+
+def test_thermal_to_rgb_saturates_outside_band() -> None:
+    # Clamped to the display band before coloring -> cells at/above
+    # HEAT_VIZ_HOT produce identical colors (no uint8 overflow).
+    at_band = thermal_to_rgb(np.array([[HEAT_VIZ_HOT]], dtype=np.int16))[0, 0]
+    above = thermal_to_rgb(np.array([[HEAT_VIZ_HOT + 5000]], dtype=np.int16))[0, 0]
+    below = thermal_to_rgb(np.array([[HEAT_VIZ_COLD - 5000]], dtype=np.int16))[0, 0]
+    at_cold = thermal_to_rgb(np.array([[HEAT_VIZ_COLD]], dtype=np.int16))[0, 0]
+    assert tuple(at_band) == tuple(above)
+    assert tuple(at_cold) == tuple(below)
+
+
+def test_thermal_to_rgb_ambient_is_neutral() -> None:
+    rgb = thermal_to_rgb(np.full((1, 1), AMBIENT_TEMP, dtype=np.int16))[0, 0]
+    # Neutral: no channel maxed out (not pure red/blue)...
+    assert rgb[0] < 250 and rgb[2] < 250
+    # ...and the gradient is pivoted on ambient, so all three channels are
+    # exactly equal there (a true flat gray, not merely 'no channel maxed').
+    assert rgb[0] == rgb[1] == rgb[2]
+
+
+def test_thermal_to_rgb_monotone_red_and_blue() -> None:
+    # Sweeping cold -> hot, red must not decrease and blue must not increase
+    # (a monotone-ish ramp). Sample every 20 degrees across the band.
+    temps = np.arange(HEAT_VIZ_COLD, HEAT_VIZ_HOT + 1, 20, dtype=np.int16).reshape(
+        1, -1
+    )
+    rgb = thermal_to_rgb(temps)[0]
+    red = rgb[:, 0].astype(int)
+    blue = rgb[:, 2].astype(int)
+    assert np.all(np.diff(red) >= 0)
+    assert np.all(np.diff(blue) <= 0)

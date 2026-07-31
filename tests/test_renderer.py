@@ -115,6 +115,21 @@ def test_renderer_render_returns_grid_sized_surface() -> None:
     assert surface.get_size() == (GRID_WIDTH, GRID_HEIGHT)
 
 
+def test_renderer_render_heat_returns_grid_sized_surface() -> None:
+    """Phase 04 heat-overlay path: render_heat paints the temperature field
+    onto the same self-healing ``_cell_surface`` and returns it. Reuses the
+    session-scoped ``_headless_pygame`` fixture (SDL dummy driver) at the top
+    of this file — no new SDL init.
+    """
+    grid = Grid(GRID_WIDTH, GRID_HEIGHT)
+    grid.set_temp(0, 0, 900)
+
+    renderer = Renderer()
+    surf = renderer.render_heat(grid)
+
+    assert surf.get_size() == (GRID_WIDTH, GRID_HEIGHT)
+
+
 def test_renderer_render_self_heals_on_grid_resize() -> None:
     """A renderer constructed at the default size re-renders a resized grid.
 

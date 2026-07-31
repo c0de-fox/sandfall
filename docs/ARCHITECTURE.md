@@ -11,18 +11,20 @@ grid and report back; the `Renderer` turns the grid into an image; the `Game`
 scales it to the window and overlays the UI.
 
 ```
-                       input (mouse / keys)
+                     input (mouse / keys; H toggles the heat overlay)
                               |
                               v
-                            Game  ---------> LoopController (pause / step)
-                           /  |  \
-                  paint_brush  |   UI (palette + HUD)
-                        |      |
-                        v      |
-                 Grid (ids + life) <--- Simulation.step (scan + rules)
-                        |
-                        v
-                  Renderer (LUT) -> grid-sized Surface -> scaled to window
+                           Game  ---------> LoopController (pause / step)
+                          /  |  \
+                 paint_brush  |   UI (palette + HUD)
+                       |      |
+                       v      |
+           Grid (ids + life + temp) <--- Simulation.step
+                       |              (thermal.diffuse_temps pre-pass, then scan + rules)
+                       |
+                       v
+                 Renderer -----> grid-sized Surface -----> scaled to window
+                 (color LUT, or thermal.thermal_to_rgb when the heat overlay is on)
 ```
 
 Module dependency sketch (arrows mean "imports / uses"):
@@ -30,27 +32,35 @@ Module dependency sketch (arrows mean "imports / uses"):
 ```
 __main__ -> game
 game -> {config, elements, grid, simulation, renderer, brush, control, ui}
-simulation -> {grid, elements, rules}
-renderer -> {grid, elements, config}
-brush -> {grid, elements, rules}            # for seed_*_life
+simulation -> {grid, elements, rules, thermal}
+renderer -> {grid, elements, config, thermal}
+thermal -> {config, elements}            # pure numpy: no pygame import
+brush -> {grid, elements, rules}         # for seed_*_life; sets temp via grid.set_temp
 ui -> {config, elements}
 rules/* -> {grid, elements, rules/_common}
-rules/__init__ -> rules/{sand,water,stone,wood,fire,smoke,plant}
+rules/__init__ -> rules/{sand,water,stone,wood,fire,smoke,plant,steam,ice,lava,glass}
 ```
 
 `pygame` is deliberately imported only by the leaves that need a display
 (`game`, `renderer`, and lazily inside `ui.UI.draw`), so the pure model
-classes (`Grid`, `Simulation`, rules, `brush`, `control`, `ui` layout helpers)
-are importable and testable headlessly.
+classes (`Grid`, `Simulation`, `thermal`, rules, `brush`, `control`, `ui`
+layout helpers) are importable and testable headlessly.
 
 ## The simulation model: `Grid`
 
-`Grid` (`grid.py`) is the entire world state. It holds two parallel numpy
-`uint8` arrays, both shape `(height, width)` = `(140, 200)`:
+`Grid` (`grid.py`) is the entire world state. It holds three parallel numpy
+arrays, all shape `(height, width)` = `(140, 200)`:
 
-- `array` — the **element id** of each cell (`0` = EMPTY, see `ElementId`).
-- `life` — a **per-cell lifetime** counter for finite-duration elements
-  (FIRE, SMOKE). Defaults to 0 everywhere; non-living cells always read 0.
+- `array` — the **element id** of each cell (`uint8`, `0` = EMPTY, see
+  `ElementId`).
+- `life` — a **per-cell lifetime** counter (`uint8`) for finite-duration
+  elements (FIRE, SMOKE, STEAM). Defaults to 0 everywhere; non-living cells
+  always read 0.
+- `temp` — the **per-cell temperature** (`int16`, degrees-C-like) added by
+  the temperature feature. Defaults to `AMBIENT_TEMP` (20) everywhere and is
+  clipped to `[TEMP_MIN, TEMP_MAX]` = `[-200, 3000]` on write. `int16` (not
+  `uint8`) because sand melts near 1700 and freezing needs sub-zero; the
+  band fits `int16` with enormous headroom.
 
 Conventions:
 
@@ -92,6 +102,47 @@ with equal probability, to avoid a leftward bias):
 4. Call the rule. If it returns a destination `(dx, dy)`, mark
    `moved[dy, dx] = True` so that cell is not processed again this frame.
 
+## Temperature field
+
+The `temp` array is advanced by a **separate vectorized heat-diffusion pass**
+that lives in the pure `thermal` module and runs ONCE at the top of
+`Simulation.step`, BEFORE the movement scan — so every rule below it reads a
+freshly-diffused temperature. Keeping diffusion out of the per-cell scan is
+what holds 60 FPS: it is one numpy op over the `(H, W)` `int16` field rather
+than `O(cells)` of Python.
+
+`thermal.diffuse_temps(temp, ids, cond_lut, rate)` advances each cell toward
+the 4-neighborhood average weighted by the cell's OWN conductivity:
+
+```
+new = temp + rate * cond[cell] * (left + right + up + down - 4 * temp)
+```
+
+- **Edge-padded (replicate) boundaries** — `np.pad(temp, 1, mode="edge")` —
+  so the grid walls act as insulators (no heat flux across the edge).
+- **Stability** of this explicit stencil requires `rate * max(cond) <= 0.25`;
+  the defaults (`DIFFUSION_RATE = 0.20`, max `COND_FIRE = 0.50` → `0.10`)
+  sit comfortably inside that bound, and `diffuse_temps` additionally clips
+  the result to `[TEMP_MIN, TEMP_MAX]`. Computation is done in `float64`
+  (the Laplacian `4 * temp` can hit `4 * TEMP_MAX` and overflow `int16`)
+  then cast back to `int16`. The function returns a NEW array and does not
+  mutate the input; `Simulation.step` assigns the result back to `grid._temp`.
+- **Conductivity LUT** — `thermal.build_conductivity_lut` mirrors
+  `renderer.build_color_lut`: a `(len(ElementId),)` `float64` array, row
+  `int(eid)` is that material's `COND_*` scalar, indexed by the grid's id
+  array to get a per-cell conductivity field in one fancy-index. Sized from
+  `len(ElementId)`, so it grows automatically when elements are added.
+  `EMPTY` carries a small non-zero conductivity so heat propagates through
+  air (otherwise fire could not warm fuel it is not adjacent to).
+
+The `temp` array mirrors the `life` consistency contract exactly:
+`get_temp`/`set_temp` mirror `get_life`/`set_life`; `_common.swap` carries
+temp on every move; `Grid.fill_circle` resets temp to `AMBIENT_TEMP`
+(mirrors zeroing life); `brush.paint_brush` sets each element's
+`temp_spawn` afterward (mirrors life-seeding); `migrate_grid` copies the
+temp overlap on resize. One new array, the same seams. The diffusion
+pre-pass is the only writer that touches the whole array at once.
+
 ## The element model
 
 Defined in `elements.py`:
@@ -109,10 +160,28 @@ Defined in `elements.py`:
   `POWDER` (falls, piles), `LIQUID` (falls, spreads), `GAS` (rises,
   diffuses). Phase drives default behavior and the displacement test.
 - **`Element`** — a frozen dataclass holding the static definition of one
-  element kind: `id`, `name`, `color` (RGB), `density`, `phase`, and
-  `flammability` (0.0 = never burns, 1.0 = always burns on contact).
+  element kind: `id`, `name`, `color` (RGB), `density`, `phase`,
+  `flammability` (legacy — unused now that combustion is heat-driven; kept
+  on the dataclass for backward compatibility), and the thermal fields added
+  by the temperature feature:
+  - `temp_spawn` — temperature a freshly painted/spawned cell starts at
+    (`AMBIENT_TEMP` for most; hot for FIRE/LAVA, cold for ICE). Mirrors how
+    `brush.paint_brush` seeds life for FIRE/SMOKE/STEAM.
+  - `flashpoint` — auto-ignition threshold; a cell ignites (becomes FIRE)
+    when its OWN temp exceeds it. `0` means NEVER (the default). Replaces the
+    old probabilistic per-neighbor spread.
+  - `conductivity` — heat conductivity scalar in `[0.0, 1.0]`, mirrored in
+    the `COND_*` LUT.
+  - `burn_temp` — temperature a FIRE cell (or other heat source) of this
+    material holds while burning; the fire rule re-asserts it each step.
+  - `melt_point` / `boil_point` / `freeze_point` / `condense_point` —
+    phase-change thresholds. `0` means "this element does not undergo that
+    transition" — except 0 is a VALID active threshold for water's
+    `freeze_point` and ice's `melt_point` (water freezes at/below 0, ice
+    melts above 0), so those rules are not guarded by a `> 0` predicate.
 - **`ELEMENTS`** — the registry `dict[ElementId, Element]` consulted for
-  colors (renderer), density (displacement), and flammability (fire spread).
+  colors (renderer), density (displacement), and all thermal behavior
+  (conductivity, flashpoint, burn/spawn temp, phase-change thresholds).
 
 ## The rule contract
 
@@ -140,14 +209,32 @@ no entry (`Simulation.step` would skip a missing entry via `RULES.get`), but
 registering the no-op documents "this element is intentionally static" and
 keeps the registry enumerating every element.
 
-**Documented side-effect exception.** A rule normally marks movement only via
-its single return value. `fire` and `plant` legitimately break this for
-chain-reaction effects: fire *ignites* neighbors and spawns smoke, and plant
-*grows* into an empty neighbor. These writes do not return a destination, so
-a freshly ignited fire or newly grown plant may also be processed later in
-the same bottom-to-top scan. With the tuned low probabilities this is the
-intended "chain reaction" feel and is bounded by grid size. See the docstring
-at the top of `rules/fire.py` for the rationale.
+**Reactive rules: transform own cell in place, return `None`.** A rule may
+transform its OWN cell in place (set a new element id, life, and temp) and
+return `None` instead of a destination. This is the documented mechanism for
+**every** temperature-driven transition: WOOD/PLANT ignite to FIRE when
+their own temp exceeds their `flashpoint`; WATER boils to STEAM / freezes to
+ICE; SAND melts to GLASS; LAVA cools to STONE. Because such a transform does
+not MOVE anything, the `moved`-this-frame guard is unaffected (its job is
+"don't move a cell twice", and nothing moved). The transformed cell is not
+marked in the guard, so it may be re-dispatched later in the same
+bottom-to-top scan — this is intended (it lets chain reactions like
+water → steam → condense → water cascade within a frame) and is bounded
+because each transition consumes its own condition (e.g. water at 110°
+becomes steam; the steam rule then runs but will not re-trigger unless its
+temp crosses the *other* threshold). This generalizes the v1 "documented
+side-effect exception" `fire.py` once relied on for spread/smoke into the
+explicit, general transition mechanism.
+
+**Combustion is heat-driven, not probabilistic.** Phase 02 removed the v1
+`SPREAD_FACTOR` probabilistic neighbor-ignition loop. Fire is now a heat
+SOURCE: it maintains a `burn_temp` (~800°) each step, the diffusion pre-pass
+carries that heat outward, and a flammable fuel ignites ITSELF when its own
+temp crosses its `flashpoint` — one physical cause (heat diffusion) instead
+of two competing models. See `rules/fire.py` for the cling behavior that
+keeps a fire cell next to fuel from rising away before the diffusion
+pre-pass can raise the fuel to its flashpoint (otherwise combustion would
+never chain).
 
 ## The `life` array and `_common.swap`
 
@@ -155,18 +242,22 @@ at the top of `rules/fire.py` for the rationale.
 this fire burns." FIRE and SMOKE carry a per-step countdown; when it hits
 zero the cell becomes EMPTY.
 
-The invariant that makes this work: **the `array` and `life` arrays must
-always describe the same cell.** Every move must carry life along. To
-guarantee that, **every move goes through `_common.swap`** (`rules/_common.py`),
-which exchanges *both* the element ids and the life values of two cells.
-Rules that *convert* a cell in place (wood -> fire, fire/smoke expiring to
-EMPTY, igniting/growing) set life explicitly with `grid.set_life`.
+The invariant that makes this work: **the `array`, `life`, and `temp`
+arrays must always describe the same cell.** Every move must carry all three
+along. To guarantee that, **every move goes through `_common.swap`**
+(`rules/_common.py`), which exchanges the element ids, life values, AND
+temperatures of two cells. Rules that *convert* a cell in place (wood →
+fire, water → steam, fire/smoke expiring to EMPTY, igniting/growing) set
+life and temp explicitly with `grid.set_life` / `grid.set_temp`. The
+`temp` array obeys the same contract; see [Temperature field](#temperature-field).
 
 Lifetime ranges are centralized so that a user-brushed fire and a
 rule-ignited fire live for the same window of steps:
 
 - `seed_fire_life()`  -> `random.randint(20, 40)` steps
 - `seed_smoke_life()` -> `random.randint(60, 120)` steps
+- `seed_steam_life()` -> `random.randint(80, 160)` steps (steam lingers
+  longer than smoke so it drifts visibly before condensing)
 
 These are re-exported from `rules/__init__.py` and used by both the fire rule
 and `brush.paint_brush` (otherwise painted fire would have life 0 and expire
@@ -205,6 +296,29 @@ not displacable.
 
 The LUT builder and the id -> RGB mapper are split out as pure numpy
 functions so the color mapping is unit-testable without a display.
+
+### Heat-overlay mode (`H`)
+
+The temperature field is normally invisible — it has no effect on element
+colors. Pressing **`H`** toggles `Game._heat_overlay`, which makes `_draw`
+call `Renderer.render_heat` instead of `render`. `render_heat` paints the
+temp field via `thermal.thermal_to_rgb` — a pure numpy map from the `int16`
+temp field to an `(H, W, 3)` `uint8` image with the gradient
+**deep blue (cold) → cyan → neutral gray (ambient) → yellow → red (hot)**.
+The display band `[HEAT_VIZ_COLD, HEAT_VIZ_HOT]` (`-40`..`1000`) is mapped
+to the full color span; temps outside the band saturate to the endpoint
+color (clipped before coloring, so there is no `uint8` overflow).
+`AMBIENT_TEMP` is the neutral pivot of the ramp on **both** sides, so an
+all-ambient scene reads as a flat "no thermal activity" gray rather than a
+tinted one.
+
+`render_heat` reuses the same self-healing `_cell_surface` and the same
+row-major → column-major `(W, H, 3)` transpose as `render` (the output
+layout of `thermal_to_rgb` matches `grid_to_rgb` deliberately); only the
+grid surface is swapped, so the palette + HUD remain visible and the player
+can still select elements while watching heat flow. Like `grid_to_rgb`,
+`thermal_to_rgb` is split out as a pure numpy function so the gradient
+mapping is unit-tested headlessly.
 
 ## Window resizing
 
@@ -275,8 +389,15 @@ Adding an element is a small, well-defined change touching five places:
    Keep existing values stable: new members take the next free integer so
    every LUT index the existing code relies on stays valid.)
 2. **`elements.ELEMENTS`** — add an `Element` entry with `name`, `color`,
-   `density`, `phase`, and (if relevant) `flammability`. The renderer picks
-   up its color automatically via the LUT.
+   `density`, `phase`, and the thermal fields: `conductivity` (plus a
+   matching `COND_<NAME>` constant in `config.py` and a row in
+   `thermal.build_conductivity_lut`), `temp_spawn` if it should paint
+   hotter/colder than ambient (FIRE/LAVA/ICE), `flashpoint`/`burn_temp` if
+   it is a fuel or a heat source, and whichever of `melt_point` /
+   `boil_point` / `freeze_point` / `condense_point` drive its transitions
+   (recall `0` means "no transition" except for water/ice where `0` is a
+   valid active threshold). The renderer picks up its color automatically
+   via the color LUT.
 3. **`rules/<name>.py`** — write an `update_<name>` function implementing the
    rule contract above. Use `_common.swap` for every move and
    `_common.can_displace` for displacement tests; set `life` explicitly for

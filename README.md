@@ -4,24 +4,32 @@ A falling-sand sandbox game built with [pygame-ce] and numpy. Paint elements
 onto a grid and watch them fall, flow, burn, and grow — in the spirit of
 *sand:box*, *The Powder Toy*, and *Sandustry*.
 
-This is a complete **v1**: seven interacting elements, mouse painting, a UI
-palette, and a single self-contained Linux binary build.
+This is a complete **v1**: twelve interacting elements with a per-cell
+**temperature field**, mouse painting, a UI palette, and a single
+self-contained Linux binary build.
 
 [pygame-ce]: https://pyga.me/
 
 ## Features
 
-Seven elements, each with its own physics and interactions:
+Twelve elements, each with its own physics and interactions, all sharing a
+per-cell **temperature field**: heat diffuses through the grid every frame,
+fuels ignite when their own temperature exceeds their flashpoint, and
+materials boil / freeze / melt / condense across phase boundaries.
 
 | Element | Behavior |
 | --- | --- |
-| **Sand** | Powder. Falls straight down; piles sideways down-diagonals when blocked. Sinks through water (it is denser). |
-| **Water** | Liquid. Falls, slips down-diagonals, and spreads one cell sideways into empty space to find its level. |
+| **Sand** | Powder. Falls straight down; piles sideways down-diagonals when blocked. Sinks through water (it is denser). Melts into **glass** above ~1700°. |
+| **Water** | Liquid. Falls, slips down-diagonals, and spreads one cell sideways into empty space to find its level. Boils into **steam** above 100° and freezes into **ice** at/below 0°. |
 | **Stone** | Static solid. Never moves. |
-| **Wood** | Static solid. Never moves, but is **flammable** — it catches fire when fire is next to it. |
-| **Fire** | Gas-like and short-lived. Each step it ages, may ignite flammable neighbors (wood, plant), may puff out smoke above, and rises into empty space. It burns out and disappears after a random lifetime. |
+| **Wood** | Static solid. Never moves, but is **flammable** — it ignites into fire when its own temperature exceeds its flashpoint (heated by a nearby fire or lava). |
+| **Fire** | Gas-like heat source and short-lived. Holds a burn-temp (~800°) while it has life; the heat-diffusion pass carries that heat outward into neighbors. It does **not** spread by probability — flammable fuels (wood, plant) ignite themselves once their own temp crosses their flashpoint. Fire clings to fuel in reach, emits smoke above, and rises once the fuel is gone. |
 | **Smoke** | Gas and short-lived. Rises straight up, drifts up-diagonals, and occasionally wafts sideways. Dissipates after a random lifetime. |
-| **Plant** | Static solid. **Grows** into an empty neighbor when water is adjacent (water is not consumed). Also flammable. |
+| **Plant** | Static solid. **Grows** into an empty neighbor when water is adjacent (water is not consumed). Also flammable (ignites above its flashpoint). |
+| **Steam** | Hot gas. Rises like smoke and drifts up-diagonals; condenses back into water when it cools below its condense point. Produced by boiling water and by the lava+water reaction. |
+| **Ice** | Cold static solid. Melts into water above 0°. Paint it cold, or freeze water by cooling it below freezing. |
+| **Lava** | Very hot dense liquid. Flows like water but denser; cools into stone as it loses heat, and reacts with adjacent water (lava + water → steam + stone). Hot enough to ignite fuel and melt sand into glass. |
+| **Glass** | Static solid made only by melting sand (drop sand on lava). Never moves once formed. |
 
 The simulation runs at a fixed 60 FPS over a 200 x 140 grid — an 800 x 560
 playfield (an 800 x 600 window with a 40px palette bar at the bottom and
@@ -42,6 +50,7 @@ the starting size).
 | **Resize window** | Drag the window border to resize the playfield. The grid grows/shrinks in whole 4px cells; content outside the new area is **lost permanently** (only the top-left overlap is preserved). The 40px palette bar stays pinned to the bottom; an enforced minimum size keeps the palette usable. |
 | **Space** | Pause / resume the simulation. |
 | **N** | Advance exactly one step while paused (no-op while running). |
+| **H** | Toggle the heat-map overlay (blue = cold, red = hot; ambient is neutral). The element palette and HUD stay visible, so you can still select elements while watching heat flow. |
 | **Esc / close window** | Quit. |
 
 Defaults: the selected element is **Sand**, and the brush radius is **3**.
@@ -109,25 +118,30 @@ Notes:
 sandfall.spec              # PyInstaller one-file build spec
 src/sandfall/
   __main__.py              # entry point (console script + PyInstaller target)
-  game.py                  # main loop: input, paint, step, render, HUD
-  config.py                # window/grid/brush/UI tunables + brush clamping
-  grid.py                  # Grid: uint8 element-id array + parallel life array
+  game.py                  # main loop: input, paint, step, render, HUD, H overlay
+  config.py                # window/grid/brush/UI tunables + thermal/diffusion knobs
+  grid.py                  # Grid: uint8 id + uint8 life + int16 temp arrays
   elements.py              # ElementId enum, Phase enum, Element dataclass, ELEMENTS
-  simulation.py            # Simulation.step: bottom-to-top scan + moved guard
-  renderer.py              # Grid -> RGB via color LUT -> grid-sized Surface
-  brush.py                 # paint_brush: disk paint + FIRE/SMOKE life seeding
+  simulation.py            # Simulation.step: heat-diffusion pre-pass + scan + moved guard
+  thermal.py               # diffuse_temps (heat pre-pass) + thermal_to_rgb (heat overlay)
+  renderer.py              # Grid -> RGB via color LUT -> grid-sized Surface (+ render_heat)
+  brush.py                 # paint_brush: disk paint + life + temp_spawn seeding
   control.py               # LoopController: pause / single-step state machine
   ui.py                    # palette layout + HUD (FPS, brush radius, paused)
   rules/
     __init__.py            # RULES registry: ElementId -> update function
-    _common.py             # can_displace, swap, seed_fire_life, seed_smoke_life
-    sand.py                # POWDER: fall + diagonal pile
-    water.py               # LIQUID: fall + diagonal + sideways flow
+    _common.py             # can_displace, swap, seed_*_life helpers
+    sand.py                # POWDER: fall + diagonal pile (+ melt -> glass)
+    water.py               # LIQUID: flow (+ boil -> steam / freeze -> ice)
     stone.py               # SOLID: no-op
-    wood.py                # SOLID: no-op (flammability lives on the ELEMENTS entry)
-    fire.py                # GAS-like: age, spread, smoke, rise
+    wood.py                # SOLID: reactive — ignites -> fire above flashpoint
+    fire.py                # GAS-like heat source: age, maintain burn-temp, smoke, rise
     smoke.py               # GAS: age, rise, drift
-    plant.py               # SOLID: grow near water
+    plant.py               # SOLID: grow near water (+ ignite above flashpoint)
+    steam.py               # GAS: rise + condense -> water
+    ice.py                 # SOLID: melt -> water
+    lava.py                # LIQUID: flow, cool -> stone, lava+water -> steam+stone
+    glass.py               # SOLID: no-op (made by sand melting)
 tests/                     # pytest suite (grid, simulation, every rule, UI, brush, packaging)
 ```
 

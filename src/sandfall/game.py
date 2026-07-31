@@ -89,6 +89,10 @@ class Game:
     # Current window size in pixels (starts at INITIAL_*; updated on resize).
     _window_w: int
     _window_h: int
+    # Heat-overlay toggle (Phase 04): when True, _draw renders the temperature
+    # field (render_heat) instead of the element-id field (render). Bound to
+    # the H key; defaults off so the default look is unchanged.
+    _heat_overlay: bool
 
     def __init__(self) -> None:
         pygame.init()
@@ -119,6 +123,7 @@ class Game:
         self._running = False
         self._window_w = INITIAL_WINDOW_W
         self._window_h = INITIAL_WINDOW_H
+        self._heat_overlay = False
 
     def run(self) -> int:
         """Run the main loop until QUIT/ESC or the ``SANDFALL_FRAMES`` cap.
@@ -158,6 +163,11 @@ class Game:
                     self._loop.toggle_pause()
                 elif event.key == pygame.K_n:
                     self._loop.request_step()
+                elif event.key == pygame.K_h:
+                    # Toggle the heat-map overlay (Phase 04). Only the grid
+                    # surface is swapped; the palette + HUD stay visible so
+                    # the player can still select elements while viewing heat.
+                    self._heat_overlay = not self._heat_overlay
             elif event.type == pygame.MOUSEWHEEL:
                 # event.y is +1 for scroll-up, -1 for scroll-down (pygame-ce).
                 # Scroll-up grows the brush.
@@ -258,7 +268,13 @@ class Game:
         # After resize the grid dims derive from the current window size
         # (compute_grid_dims), so this redraws the entire scene every frame.
         self._screen.fill(BG_COLOR)
-        small = self._renderer.render(self._grid)
+        # Heat-overlay toggle (Phase 04): swap the grid surface for the
+        # temperature field. The rest of _draw (scale + blit + UI overlay) is
+        # unchanged, so the palette + HUD remain visible in both modes.
+        if self._heat_overlay:
+            small = self._renderer.render_heat(self._grid)
+        else:
+            small = self._renderer.render(self._grid)
         target = (self._grid.width * CELL_SIZE, self._grid.height * CELL_SIZE)
         scaled = pygame.transform.scale(small, target)
         self._screen.blit(scaled, (0, 0))

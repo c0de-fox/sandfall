@@ -21,6 +21,7 @@ import pygame
 from .config import BG_COLOR, GRID_HEIGHT, GRID_WIDTH
 from .elements import ELEMENTS, ElementId
 from .grid import Grid
+from .thermal import thermal_to_rgb
 
 
 def build_color_lut(
@@ -76,6 +77,25 @@ class Renderer:
         rgb = grid_to_rgb(grid, self._lut)  # (H, W, 3)
         # pygame.surfarray works in (width, height, 3) column-major order, so
         # transpose the row-major grid image before blitting.
+        rgb_t = np.transpose(rgb, (1, 0, 2))  # (W, H, 3)
+        pygame.surfarray.blit_array(self._cell_surface, rgb_t)
+        return self._cell_surface
+
+    def render_heat(self, grid: Grid) -> pygame.Surface:
+        """Paint the grid's TEMPERATURE field (heat-overlay mode) and return it.
+
+        Same surface/sizing contract as :meth:`render`: returns the grid-sized
+        ``_cell_surface`` (reallocated on a size mismatch), mutated in place
+        by ``blit_array``. Used by ``Game._draw`` when the ``H`` heat-overlay
+        toggle is on. Only the grid surface is replaced — the caller still
+        blits the palette + HUD on top, so the player can select elements
+        while viewing heat.
+        """
+        # Self-heal against resize exactly as render does.
+        if self._cell_surface.get_size() != (grid.width, grid.height):
+            self._cell_surface = pygame.Surface((grid.width, grid.height))
+        rgb = thermal_to_rgb(grid.temp)  # (H, W, 3)
+        # Same column-major transpose as render (thermal_to_rgb is row-major).
         rgb_t = np.transpose(rgb, (1, 0, 2))  # (W, H, 3)
         pygame.surfarray.blit_array(self._cell_surface, rgb_t)
         return self._cell_surface

@@ -310,3 +310,58 @@ def test_format_hud_includes_fps_brush_and_count() -> None:
     assert format_hud(60.0, 5, 1234) == "60 FPS  r=5  n=1234"
     # fps is truncated to int (int()), not rounded.
     assert format_hud(59.9, 1, 7) == "59 FPS  r=1  n=7"
+
+
+def test_magnifier_src_rect_centers_on_cursor() -> None:
+    """On a large grid the lens window centers exactly on the cursor cell.
+
+    The lens window is MAGNIFY_LENS_CELLS (21) wide -- ODD -- so half == 10
+    and the window is symmetric around the cursor. Pure (no pygame) -> the
+    source-rect math for ``Game._draw_magnifier`` is headlessly testable.
+    """
+    from sandfall.ui import magnifier_src_rect
+
+    # 21-cell window centered on (100, 100) on a 200x140 grid.
+    assert magnifier_src_rect(100, 100, 200, 140) == (100 - 10, 100 - 10, 21, 21)
+
+
+def test_magnifier_src_rect_clamps_at_edges() -> None:
+    """Near any border the lens window shifts to stay fully inside the grid.
+
+    All four edges + both corners: the window never goes off-grid (it shows
+    edge content instead). Pure (no pygame) -> unit-tested headlessly.
+    """
+    from sandfall.ui import magnifier_src_rect
+
+    gw, gh = 200, 140
+    n = 21  # MAGNIFY_LENS_CELLS
+    # Top-left corner (0, 0): window pinned to the origin.
+    assert magnifier_src_rect(0, 0, gw, gh) == (0, 0, n, n)
+    # Top-right corner (gw-1, 0): window pinned to the right edge.
+    assert magnifier_src_rect(gw - 1, 0, gw, gh) == (gw - n, 0, n, n)
+    # Bottom-left corner (0, gh-1): window pinned to the bottom edge.
+    assert magnifier_src_rect(0, gh - 1, gw, gh) == (0, gh - n, n, n)
+    # Bottom-right corner (gw-1, gh-1): window pinned to bottom-right.
+    assert magnifier_src_rect(gw - 1, gh - 1, gw, gh) == (gw - n, gh - n, n, n)
+    # Mid-left edge: x clamps to 0, y centers normally.
+    assert magnifier_src_rect(0, 70, gw, gh) == (0, 60, n, n)
+    # Mid-right edge: x clamps to gw-n, y centers normally.
+    assert magnifier_src_rect(gw - 1, 70, gw, gh) == (gw - n, 60, n, n)
+    # Top edge mid: y clamps to 0, x centers normally.
+    assert magnifier_src_rect(100, 0, gw, gh) == (90, 0, n, n)
+    # Bottom edge mid: y clamps to gh-n, x centers normally.
+    assert magnifier_src_rect(100, gh - 1, gw, gh) == (90, gh - n, n, n)
+
+
+def test_magnifier_src_rect_none_when_grid_too_small() -> None:
+    """A grid smaller than the lens window in either axis -> no useful zoom."""
+    from sandfall.ui import magnifier_src_rect
+
+    # Smaller than 21 cells in both axes.
+    assert magnifier_src_rect(5, 5, 10, 10) is None
+    # Too small in x only.
+    assert magnifier_src_rect(5, 50, 10, 140) is None
+    # Too small in y only.
+    assert magnifier_src_rect(50, 5, 200, 10) is None
+    # Exactly lens_cells wide -> still usable (>=, not strictly >).
+    assert magnifier_src_rect(10, 10, 21, 21) == (0, 0, 21, 21)

@@ -8,8 +8,8 @@ pure too. The :data:`TOOL_TOOLTIPS` mapping and the element/tool tooltip text
 are pure as well. All three are unit-tested headlessly in ``tests/test_ui.py``.
 The :class:`UI` draw method does the pygame rendering (hover tooltips, the
 enabled Brush-shape button + its footprint glyph, the always-on cursor
-outline, the dimmed Magnifier placeholder) and is verified manually via the
-running window / the ``SANDFALL_FRAMES`` seam.
+outline, the enabled Magnifier button reflecting on/off) and is verified
+manually via the running window / the ``SANDFALL_FRAMES`` seam.
 
 Pygame is imported lazily inside :meth:`UI.draw` so importing this module (and
 therefore the pure helpers) does not require a pygame runtime — important for
@@ -31,6 +31,7 @@ from .config import (
     FONT_SIZE,
     FPS_COLOR,
     HIGHLIGHT_COLOR,
+    MAGNIFY_LENS_CELLS,
     PALETTE_BAR_HEIGHT,
     PALETTE_BG,
     PALETTE_GROUP_GAP,
@@ -175,6 +176,31 @@ def format_hud(fps: float, brush_radius: int, count: int) -> str:
     return f"{int(fps)} FPS  r={brush_radius}  n={count}"
 
 
+def magnifier_src_rect(
+    gx: int, gy: int, grid_w: int, grid_h: int, lens_cells: int = MAGNIFY_LENS_CELLS
+) -> tuple[int, int, int, int] | None:
+    """Grid-cell window to crop for the magnifier lens, centered on ``(gx, gy)``.
+
+    Returns ``(x, y, w, h)`` in GRID cells (to be applied to the grid-sized
+    render surface), or ``None`` if the grid is smaller than ``lens_cells`` in
+    either axis (no useful zoom). The window is clamped to grid bounds: when
+    the cursor is near an edge the window shifts so it stays fully inside the
+    grid (the lens shows edge content rather than going off-grid). ``w``/``h``
+    may be smaller than ``lens_cells`` at the very smallest grids.
+
+    Pure (no pygame) -> unit-tested headlessly. This is the source-rect math
+    for the follow-cursor magnifier lens drawn by ``Game._draw_magnifier``; it
+    does NOT affect painting input mapping (the cursor still paints the cell at
+    ``mx // CELL_SIZE`` at 1x).
+    """
+    if grid_w < lens_cells or grid_h < lens_cells:
+        return None
+    half = lens_cells // 2
+    x = max(0, min(grid_w - lens_cells, gx - half))
+    y = max(0, min(grid_h - lens_cells, gy - half))
+    return (x, y, lens_cells, lens_cells)
+
+
 class UI:
     """Owns the palette layout + on-screen HUD (FPS, brush radius, paused).
 
@@ -249,6 +275,7 @@ class UI:
         paused: bool,
         count: int,
         brush_shape: BrushShape = BrushShape.DISK,
+        magnify_on: bool = False,
     ) -> None:
         """Render the palette + HUD onto ``screen``.
 
@@ -257,7 +284,10 @@ class UI:
         (``count`` is the number of non-empty cells); ``paused`` toggles the
         centered PAUSED indicator. ``brush_shape`` drives the Brush-shape
         button glyph (circle for DISK, square for SQUARE) and the always-on
-        cursor footprint outline drawn over the sim area.
+        cursor footprint outline drawn over the sim area. ``magnify_on``
+        drives the Magnifier button's active outline (on/off state) — the lens
+        itself is drawn by ``Game._draw_magnifier``, not here, because it
+        needs the grid-sized render surface.
         """
         import pygame  # local: keeps module import pygame-free for the pure helpers
 
@@ -338,11 +368,18 @@ class UI:
                             ERASER_LABEL,
                             ERASER_SWATCH_BORDER,
                         )
-                    else:  # MAGNIFY placeholder (dimmed).
-                        glyph = "Z"
-                        fill = (55, 55, 60)
-                        border = (35, 35, 40)
-                        glyph_color = (120, 120, 130)
+                    else:  # MAGNIFY -- enabled (Phase 03 wired it: Z + click toggle).
+                        # Styling mirrors the Brush-shape button's enabled
+                        # look (medium-gray fill + bright border + a white
+                        # glyph) so it reads as a functional tool, not a
+                        # placeholder. The on/off state is carried by the
+                        # active outline below (drawn when magnify_on is True).
+                        fill, border, glyph, glyph_color = (
+                            (70, 70, 80),
+                            (180, 180, 190),
+                            "Z",
+                            HIGHLIGHT_COLOR,
+                        )
                     pygame.draw.rect(screen, fill, rect)
                     pygame.draw.rect(screen, border, rect, 1)
                     assert self._font is not None
@@ -357,12 +394,13 @@ class UI:
             # Active outline: element items highlight on their id; the Eraser
             # tool highlights when EMPTY is the selected element (so
             # left-drag-erase keeps its highlight); the Brush-shape tool is
-            # ALWAYS highlighted (it always reflects the current shape). The
-            # Magnifier placeholder is never active until Phase 03.
+            # ALWAYS highlighted (it always reflects the current shape); the
+            # Magnifier tool highlights while it is toggled on (magnify_on).
             is_active = (
                 (item.is_element and item.element_id == active)
                 or (item.tool == ToolId.ERASER and active == ElementId.EMPTY)
                 or item.tool == ToolId.BRUSH_SHAPE
+                or (item.tool == ToolId.MAGNIFY and magnify_on)
             )
             if is_active:
                 pygame.draw.rect(screen, HIGHLIGHT_COLOR, rect, 2)

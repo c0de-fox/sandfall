@@ -48,6 +48,7 @@ the starting size).
 | **Eraser swatch** | Select the Eraser (rightmost swatch) so left-drag erases instead of painting. |
 | **Mouse wheel** | Grow / shrink the brush radius (range 1–20). Scroll up to grow. |
 | **Tab** | Cycle the brush footprint shape: **Disk** ↔ **Square** (the Brush-shape palette button does the same). |
+| **Z** | Toggle the follow-cursor magnifier (the Magnifier palette button does the same). A ~6× lens floats near the cursor showing zoomed grid content; it hides while the cursor is over the palette strip. **Visual only** — it does not change where paint lands (a painted cell still lands where the 1× cursor points, not where it appears in the lens). The lens magnifies whichever view is active, so it also zooms the heat overlay when `H` is on. |
 | **Resize window** | Drag the window border to resize the playfield. The grid grows/shrinks in whole 4px cells; content outside the new area is **lost permanently** (only the top-left overlap is preserved). The 40px palette bar stays pinned to the bottom; an enforced minimum size keeps the palette usable. |
 | **Space** | Pause / resume the simulation. |
 | **N** | Advance exactly one step while paused (no-op while running). |
@@ -62,6 +63,8 @@ indicator appears centered at the top when the simulation is paused. The
 active palette swatch is outlined in white. An always-on **cursor outline**
 (circle for Disk, square for Square, sized to the brush radius) shows exactly
 where the brush will land; it hides while the cursor is over the palette strip.
+When the magnifier is on, its button is outlined in white and a bordered
+~6× lens floats up-and-right of the cursor.
 
 ## Requirements
 

@@ -414,6 +414,32 @@ can still select elements while watching heat flow. Like `grid_to_rgb`,
 `thermal_to_rgb` is split out as a pure numpy function so the gradient
 mapping is unit-tested headlessly.
 
+### Follow-cursor magnifier (`Z`)
+
+`Z` (and the Magnifier palette button) toggle `Game._magnify`. When on and the
+cursor is in the sim area, `Game._draw` draws a **follow-cursor lens**: it
+crops a `MAGNIFY_LENS_CELLS`-wide (21) grid-cell window out of the
+already-rendered grid-sized `small` surface, `pygame.transform.scale`s it by
+`MAGNIFY_ZOOM` (6×), and blits it as a floating lens offset up-and-right of
+the cursor (clamped into the window) so it does not cover the brush point.
+Whichever surface `_draw` rendered is magnified — element-id OR heat-overlay —
+so the lens also zooms the heat view when `H` is on (no extra branch). The
+lens is hidden while the cursor is over the reserved palette strip
+(`UI.in_reserved_area`) and is drawn BEFORE `UI.draw` so the palette, HUD, and
+cursor outline render on top of it.
+
+The crop-rect math is a **pure** helper, `ui.magnifier_src_rect(gx, gy,
+grid_w, grid_h, lens_cells)`, so it is unit-tested headlessly: it centers the
+window on the cursor cell, edge-clamps so the window stays fully inside the
+grid at any border/corner, and returns `None` when the grid is smaller than
+`lens_cells` in either axis (no useful zoom).
+
+**The magnifier is visual only — painting input mapping is unchanged.** The
+cursor still paints the cell at `mx // CELL_SIZE` at 1×; the lens is
+display-only, so a painted cell lands where the 1× cursor points, NOT where it
+appears in the lens. (A persistent viewport/pan that *does* remap input is
+deferred — see the brush-zoom-ui plan's Out of Scope.)
+
 ## Window resizing
 
 The display uses the **`pygame.Window` API** (pygame-ce ≥ 2.5.2), not the

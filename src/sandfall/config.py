@@ -160,6 +160,15 @@ HEAT_VIZ_HOT = 1000
 DEFAULT_ELEMENT = ElementId.SAND
 DEFAULT_BRUSH_RADIUS = 3
 
+# --- Magnifier (follow-cursor lens, Phase 03) --------------------------------
+# VISUAL ONLY: the lens crops the rendered grid surface and scales it up; it
+# does NOT change painting input mapping (mx // CELL_SIZE stays at 1x). Tunables
+# here so the lens size / zoom are single-source.
+MAGNIFY_ZOOM = 6  # integer scale factor of the lens (6x)
+MAGNIFY_LENS_CELLS = 21  # grid cells across the lens (odd -> centered on cursor)
+# Lens pixel size on screen = MAGNIFY_LENS_CELLS * CELL_SIZE * MAGNIFY_ZOOM
+#                            = 21 * 4 * 6 == 504 px (clamped to the window in _draw).
+
 # --- Colors -----------------------------------------------------------------
 # Window background. EMPTY cells render as this color (see renderer.build_color_lut),
 # so the simulation area visually blends with the surrounding window if the grid

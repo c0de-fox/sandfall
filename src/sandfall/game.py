@@ -38,8 +38,10 @@ from .config import (
     FPS,
     GRID_HEIGHT,
     GRID_WIDTH,
+    HIGHLIGHT_COLOR,
     INITIAL_WINDOW_H,
     INITIAL_WINDOW_W,
+    MAGNIFY_ZOOM,
     MIN_WINDOW_H,
     MIN_WINDOW_W,
     clamp_brush_radius,
@@ -50,7 +52,7 @@ from .elements import ElementId
 from .grid import BrushShape, Grid, migrate_grid
 from .renderer import Renderer
 from .simulation import Simulation
-from .ui import UI, ToolId
+from .ui import UI, ToolId, magnifier_src_rect
 
 
 def _parse_frame_cap() -> int | None:
@@ -96,6 +98,12 @@ class Game:
     # field (render_heat) instead of the element-id field (render). Bound to
     # the H key; defaults off so the default look is unchanged.
     _heat_overlay: bool
+    # Follow-cursor magnifier toggle (Phase 03): when True, _draw draws a
+    # ~MAGNIFY_ZOOM lens floating near the cursor showing zoomed grid content.
+    # VISUAL ONLY -- it does NOT change painting input mapping (the cursor
+    # still paints the cell at mx // CELL_SIZE at 1x). Bound to Z and the
+    # Magnifier palette button; defaults off.
+    _magnify: bool
 
     def __init__(self) -> None:
         pygame.init()
@@ -128,6 +136,7 @@ class Game:
         self._window_w = INITIAL_WINDOW_W
         self._window_h = INITIAL_WINDOW_H
         self._heat_overlay = False
+        self._magnify = False
 
     def run(self) -> int:
         """Run the main loop until QUIT/ESC or the ``SANDFALL_FRAMES`` cap.
@@ -172,6 +181,13 @@ class Game:
                     # surface is swapped; the palette + HUD stay visible so
                     # the player can still select elements while viewing heat.
                     self._heat_overlay = not self._heat_overlay
+                elif event.key == pygame.K_z:
+                    # Toggle the follow-cursor magnifier (Phase 03). VISUAL
+                    # ONLY: it crops the rendered grid surface and scales it
+                    # up; it does NOT change where paint lands (mx //
+                    # CELL_SIZE stays at 1x). Shares the Magnifier palette
+                    # button's toggle (the same _magnify flag).
+                    self._magnify = not self._magnify
                 elif event.key == pygame.K_TAB:
                     # Cycle the brush footprint shape (Disk <-> Square). The
                     # Brush-shape palette button does the same via the shared
@@ -207,7 +223,10 @@ class Game:
                         # Shares the Tab handler's logic via the helper (DRY).
                         self._cycle_brush_shape()
                     elif item.tool == ToolId.MAGNIFY:
-                        pass  # Wired in Phase 03 (magnifier toggle).
+                        # Toggle the follow-cursor magnifier (Phase 03).
+                        # Shares the Z key's toggle (the same _magnify flag).
+                        # VISUAL ONLY -- painting input is unchanged.
+                        self._magnify = not self._magnify
             # NOTE: no VIDEORESIZE branch. Window resize is detected by polling
             # self._window.size every frame in _apply_resize_if_changed(); that
             # path is event-driver-independent and never recreates the window
@@ -319,6 +338,19 @@ class Game:
         target = (self._grid.width * CELL_SIZE, self._grid.height * CELL_SIZE)
         scaled = pygame.transform.scale(small, target)
         self._screen.blit(scaled, (0, 0))
+
+        # Follow-cursor magnifier (Phase 03, visual only). Crop the grid-sized
+        # ``small`` surface around the cursor cell, scale up ~MAGNIFY_ZOOM, and
+        # blit as a floating lens. Painting input mapping is UNCHANGED (mx //
+        # CELL_SIZE stays at 1x): the lens is display-only, a painted cell
+        # lands where the 1x cursor points, NOT where it appears in the lens.
+        # Drawn BEFORE self._ui.draw so the palette + HUD + cursor outline
+        # render on top of it (and the lens is hidden over the palette anyway).
+        # Whichever surface ``_draw`` rendered is magnified -- element-id OR
+        # heat-overlay -- so the lens shows zoomed heat too when H is toggled.
+        if self._magnify:
+            self._draw_magnifier(small)
+
         # Particle count: non-empty cells, once per frame (~0.04 ms — free).
         # Full-grid sum, NOT incremental tracking — cheap at current grid
         # sizes; revisit only if a much larger grid makes it non-negligible.
@@ -331,4 +363,53 @@ class Game:
             self._loop.paused,
             count,
             self.brush_shape,
+            magnify_on=self._magnify,
         )
+
+    def _draw_magnifier(self, small: pygame.Surface) -> None:
+        """Crop + scale a grid region around the cursor into a magnifier lens.
+
+        Visual only: does NOT affect painting coordinates (the cursor still
+        paints the cell at ``mx // CELL_SIZE`` at 1x). The lens is hidden when
+        the cursor is over the reserved palette strip (so it never magnifies
+        the palette). Placement is offset up-and-right of the cursor by a small
+        gap and clamped into the window so a cursor near an edge keeps the lens
+        fully on-screen. The lens is large (MAGNIFY_LENS_CELLS *
+        CELL_SIZE * MAGNIFY_ZOOM == 504 px) and can overlap the cursor region
+        after clamping, but it is drawn BEFORE ``UI.draw`` -- so the always-on
+        cursor outline (the exact brush footprint) renders ON TOP of the lens
+        and the player always sees precisely where paint will land. The exact
+        offset choice is pinned in the Phase 03 reflection.
+
+        ``small`` is the already-rendered grid-sized surface (element-id OR
+        heat-overlay, whichever ``_draw`` produced). A subsurface shares its
+        pixels (no copy); ``pygame.transform.scale`` returns a new surface, so
+        the whole crop+scale is cheap. ``magnifier_src_rect`` guarantees the
+        crop rect is in-bounds, so the subsurface rect is always valid.
+        """
+        mx, my = pygame.mouse.get_pos()
+        if self._ui.in_reserved_area(mx, my):
+            return
+        gx, gy = mx // CELL_SIZE, my // CELL_SIZE
+        src = magnifier_src_rect(gx, gy, self._grid.width, self._grid.height)
+        if src is None:
+            return
+        sx, sy, sw, sh = src
+        lens_w = sw * CELL_SIZE * MAGNIFY_ZOOM
+        lens_h = sh * CELL_SIZE * MAGNIFY_ZOOM
+        # Crop at grid resolution (surface is grid.width x grid.height) then scale.
+        lens_surf = pygame.transform.scale(
+            small.subsurface((sx, sy, sw, sh)), (lens_w, lens_h)
+        )
+        # Offset placement: up-and-right of the cursor so the lens floats off
+        # the brush point (the player can still see where they are painting),
+        # then clamp into the window so a cursor near the top/right edge keeps
+        # the lens fully on-screen.
+        gap = CELL_SIZE * 2
+        lx = mx + gap
+        ly = my - gap - lens_h
+        lx = max(0, min(lx, self._window_w - lens_w))
+        ly = max(0, min(ly, self._window_h - lens_h))
+        self._screen.blit(lens_surf, (lx, ly))
+        # A thin border so the lens edge is visible against the scene.
+        pygame.draw.rect(self._screen, HIGHLIGHT_COLOR, (lx, ly, lens_w, lens_h), 1)

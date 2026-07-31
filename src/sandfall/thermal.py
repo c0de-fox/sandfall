@@ -27,6 +27,18 @@ from .config import (
     COND_STONE,
     COND_WATER,
     COND_WOOD,
+    CP_EMPTY,
+    CP_FIRE,
+    CP_GLASS,
+    CP_ICE,
+    CP_LAVA,
+    CP_PLANT,
+    CP_SAND,
+    CP_SMOKE,
+    CP_STEAM,
+    CP_STONE,
+    CP_WATER,
+    CP_WOOD,
     DIFFUSION_RATE,
     HEAT_VIZ_COLD,
     HEAT_VIZ_HOT,
@@ -62,43 +74,86 @@ def build_conductivity_lut() -> npt.NDArray[np.float64]:
     return lut
 
 
+def build_heat_capacity_lut() -> npt.NDArray[np.float64]:
+    """Build the element-id -> heat-capacity LUT (mirrors build_conductivity_lut).
+
+    Shape ``(len(ElementId),)`` float64; row ``int(eid)`` is that material's
+    heat capacity (thermal inertia). Indexed by the grid's id array to get a
+    per-cell heat-capacity field for :func:`diffuse_temps` (which divides the
+    temperature change by cp). Every value is > 0 (diffusion divides by cp).
+    """
+    lut = np.zeros(len(ElementId), dtype=np.float64)
+    lut[int(ElementId.EMPTY)] = CP_EMPTY
+    lut[int(ElementId.SAND)] = CP_SAND
+    lut[int(ElementId.WATER)] = CP_WATER
+    lut[int(ElementId.STONE)] = CP_STONE
+    lut[int(ElementId.WOOD)] = CP_WOOD
+    lut[int(ElementId.FIRE)] = CP_FIRE
+    lut[int(ElementId.SMOKE)] = CP_SMOKE
+    lut[int(ElementId.PLANT)] = CP_PLANT
+    # Phase 03 new materials (rows 8..11).
+    lut[int(ElementId.STEAM)] = CP_STEAM
+    lut[int(ElementId.ICE)] = CP_ICE
+    lut[int(ElementId.LAVA)] = CP_LAVA
+    lut[int(ElementId.GLASS)] = CP_GLASS
+    return lut
+
+
 def diffuse_temps(
     temp: npt.NDArray[np.int16],
     ids: npt.NDArray[np.uint8],
     cond_lut: npt.NDArray[np.float64],
+    cp_lut: npt.NDArray[np.float64],
     rate: float = DIFFUSION_RATE,
 ) -> npt.NDArray[np.int16]:
-    """Advance the temperature field one diffusion step. Returns a NEW array.
+    """Advance the temperature field one CONSERVATIVE diffusion step.
 
-    Each cell moves toward the 4-neighborhood average weighted by its OWN
-    conductivity::
+    Finite-volume / face-flux discretization with per-cell heat capacity::
 
-        new = temp + rate * cond[cell] * (left+right+up+down - 4*temp)
+        flux across each interior face = k_face * rate * (t_left - t_right)
+        k_face = (cond[left] + cond[right]) / 2          (arithmetic mean)
+        new_t  = t + (net signed face flux into the cell) / cp[cell]
 
-    Boundaries are edge-padded (replicate) so the grid walls act as insulators
-    (no heat flux across the edge). Computation is done in float64 to avoid
-    int16 overflow in the Laplacian (4*temp up to 4*TEMP_MAX), then the result
-    is clipped to ``[TEMP_MIN, TEMP_MAX]`` and cast back to int16. The explicit
-    stencil is stable when ``rate * max(cond) <= 0.25``; the defaults
-    (0.20 * 0.50 == 0.10) sit well inside that bound. Pure / pygame-free ->
-    unit-tested headlessly. Does NOT mutate ``temp`` in place; the caller
-    (:meth:`Simulation.step`) assigns the result back.
+    The signed face fluxes telescope to zero over the grid (every flux appears
+    once negative and once positive), so total heat ``sum(cp*temp)`` is
+    CONSERVED up to rounding/clip — this is the fix for the non-conservative
+    own-conductivity stencil and the int16-truncation drain the model shipped
+    with. Per-cell heat capacity ``cp`` gives thermal inertia: high-cp
+    materials (lava, water) change slowly; low-cp gases change fast.
+
+    Computation is float64 throughout; the result is rounded to nearest
+    (``np.rint``, NOT truncated toward zero) and cast to int16. Truncation
+    biased every cell toward 0 each step; round-to-nearest makes the rounding
+    drain negligible. The explicit form reduces to standard diffusion with
+    coefficient ``rate*k/cp``, stable when ``rate*max(cond)/min(cp) <= 0.25``
+    (defaults: 0.20*0.50/0.5 == 0.20). Walls are insulators: only INTERIOR
+    faces carry flux (edge cells have fewer faces), so no heat crosses the grid
+    edge. Pure / pygame-free -> unit-tested headlessly. Does NOT mutate
+    ``temp`` in place; the caller (:meth:`Simulation.step`) assigns the result
+    back.
     """
-    # Edge-pad so neighbor sums at the border use the border cell itself
-    # (insulated walls: no heat crosses the grid edge).
-    padded = np.pad(temp, pad_width=1, mode="edge").astype(np.float64)
-    left = padded[1:-1, 0:-2]
-    right = padded[1:-1, 2:]
-    up = padded[0:-2, 1:-1]
-    down = padded[2:, 1:-1]
-    neighbor_sum = left + right + up + down
-
-    cond = cond_lut[ids]  # per-cell conductivity, shape (H, W) float64
+    cond = cond_lut[ids].astype(np.float64)  # (H, W) per-cell conductivity
+    cp = cp_lut[ids].astype(np.float64)  # (H, W) per-cell heat capacity
     t = temp.astype(np.float64)
-    delta = rate * cond * (neighbor_sum - 4.0 * t)
-    new_temp = t + delta
-    np.clip(new_temp, TEMP_MIN, TEMP_MAX, out=new_temp)
-    return new_temp.astype(np.int16)
+
+    # Face conductivities: arithmetic mean of the two cells sharing each face.
+    kx = (cond[:, :-1] + cond[:, 1:]) / 2.0  # (H, W-1) vertical faces
+    ky = (cond[:-1, :] + cond[1:, :]) / 2.0  # (H-1, W) horizontal faces
+    # Signed heat crossing each face (positive = left/up -> right/down).
+    flux_x = kx * rate * (t[:, :-1] - t[:, 1:])  # (H, W-1)
+    flux_y = ky * rate * (t[:-1, :] - t[1:, :])  # (H-1, W)
+
+    # Net heat INTO each cell: left/up neighbor loses (subtract), this cell
+    # gains (add). sum(div) == 0 exactly -> total heat conserved up to rounding.
+    div = np.zeros_like(t)
+    div[:, :-1] -= flux_x  # left cell of each vertical face loses the flux
+    div[:, 1:] += flux_x  # right cell of each vertical face gains it
+    div[:-1, :] -= flux_y  # top cell of each horizontal face loses
+    div[1:, :] += flux_y  # bottom cell of each horizontal face gains
+
+    new_t = t + div / cp  # heat capacity -> thermal inertia
+    np.clip(new_t, TEMP_MIN, TEMP_MAX, out=new_t)
+    return np.rint(new_t).astype(np.int16)  # round-to-nearest (NOT trunc)
 
 
 # --- Heat-overlay gradient (Phase 04) ---------------------------------------

@@ -111,29 +111,44 @@ freshly-diffused temperature. Keeping diffusion out of the per-cell scan is
 what holds 60 FPS: it is one numpy op over the `(H, W)` `int16` field rather
 than `O(cells)` of Python.
 
-`thermal.diffuse_temps(temp, ids, cond_lut, rate)` advances each cell toward
-the 4-neighborhood average weighted by the cell's OWN conductivity:
+`thermal.diffuse_temps(temp, ids, cond_lut, cp_lut, rate)` advances the
+temperature field one **conservative** face-flux (finite-volume) step with
+per-cell heat capacity:
 
 ```
-new = temp + rate * cond[cell] * (left + right + up + down - 4 * temp)
+flux across each interior face = k_face * rate * (t_left - t_right)
+k_face = (cond[left] + cond[right]) / 2          (arithmetic mean)
+new_t  = t + (net signed face flux into the cell) / cp[cell]
 ```
 
-- **Edge-padded (replicate) boundaries** — `np.pad(temp, 1, mode="edge")` —
-  so the grid walls act as insulators (no heat flux across the edge).
-- **Stability** of this explicit stencil requires `rate * max(cond) <= 0.25`;
-  the defaults (`DIFFUSION_RATE = 0.20`, max `COND_FIRE = 0.50` → `0.10`)
-  sit comfortably inside that bound, and `diffuse_temps` additionally clips
-  the result to `[TEMP_MIN, TEMP_MAX]`. Computation is done in `float64`
-  (the Laplacian `4 * temp` can hit `4 * TEMP_MAX` and overflow `int16`)
-  then cast back to `int16`. The function returns a NEW array and does not
+- **Insulated walls** — only INTERIOR faces carry flux (edge cells simply have
+  fewer faces), so no heat crosses the grid edge. No padding is used.
+- **Conservation** — the signed face fluxes telescope to zero over the grid
+  (every flux appears once negative and once positive), so total heat
+  `sum(cp*temp)` is conserved up to the int16 round-to-nearest. This replaces
+  the non-conservative own-conductivity stencil the model originally shipped
+  with (which annihilated heat/cold at material boundaries).
+- **Heat capacity / thermal inertia** — each material has a `cp` scalar
+  (`config.CP_*`, mirrored on `Element.heat_capacity`); `div / cp` means
+  high-cp materials (lava 5.0, water 4.0) change temperature slowly and low-cp
+  gases (fire/smoke/steam 0.5) change fast. Every `CP_*` is > 0 (diffusion
+  divides by cp).
+- **Stability** of this explicit form (coefficient `rate*k/cp`) requires
+  `rate * max(cond) / min(cp) <= 0.25`; the defaults (`DIFFUSION_RATE = 0.20`,
+  max `COND_FIRE = 0.50`, min `CP_* = 0.5` → `0.20`) sit comfortably inside
+  that bound, and `diffuse_temps` additionally clips the result to
+  `[TEMP_MIN, TEMP_MAX]`. Computation is `float64` throughout; the result is
+  rounded to nearest (`np.rint`, NOT truncated — truncation drained heat
+  toward 0) and cast to `int16`. The function returns a NEW array and does not
   mutate the input; `Simulation.step` assigns the result back to `grid._temp`.
-- **Conductivity LUT** — `thermal.build_conductivity_lut` mirrors
-  `renderer.build_color_lut`: a `(len(ElementId),)` `float64` array, row
-  `int(eid)` is that material's `COND_*` scalar, indexed by the grid's id
-  array to get a per-cell conductivity field in one fancy-index. Sized from
-  `len(ElementId)`, so it grows automatically when elements are added.
-  `EMPTY` carries a small non-zero conductivity so heat propagates through
-  air (otherwise fire could not warm fuel it is not adjacent to).
+- **Conductivity + heat-capacity LUTs** — `thermal.build_conductivity_lut` and
+  `thermal.build_heat_capacity_lut` mirror `renderer.build_color_lut`: each is
+  a `(len(ElementId),)` `float64` array, row `int(eid)` is that material's
+  `COND_*` / `CP_*` scalar, indexed by the grid's id array to get a per-cell
+  field in one fancy-index. Sized from `len(ElementId)`, so they grow
+  automatically when elements are added. `EMPTY` carries a small non-zero
+  conductivity so heat propagates through air (otherwise fire could not warm
+  fuel it is not adjacent to).
 
 The `temp` array mirrors the `life` consistency contract exactly:
 `get_temp`/`set_temp` mirror `get_life`/`set_life`; `_common.swap` carries
@@ -391,7 +406,10 @@ Adding an element is a small, well-defined change touching five places:
 2. **`elements.ELEMENTS`** — add an `Element` entry with `name`, `color`,
    `density`, `phase`, and the thermal fields: `conductivity` (plus a
    matching `COND_<NAME>` constant in `config.py` and a row in
-   `thermal.build_conductivity_lut`), `temp_spawn` if it should paint
+   `thermal.build_conductivity_lut`), `heat_capacity` (plus a matching
+   `CP_<NAME>` constant > 0 in `config.py` and a row in
+   `thermal.build_heat_capacity_lut` — diffusion divides by cp, so it must be
+   positive), `temp_spawn` if it should paint
    hotter/colder than ambient (FIRE/LAVA/ICE), `flashpoint`/`burn_temp` if
    it is a fuel or a heat source, and whichever of `melt_point` /
    `boil_point` / `freeze_point` / `condense_point` drive its transitions

@@ -79,6 +79,11 @@ class Element:
     # LUT (config.COND_*). Kept on Element too so ELEMENTS is the single
     # registry a contributor edits when adding a material.
     conductivity: float = 0.0
+    # Heat capacity / thermal inertia scalar (> 0). Divides the temperature
+    # change in diffuse_temps: high cp = thermally massive (changes slowly);
+    # also stored in the heat-capacity LUT (config.CP_*). Default 1.0 so every
+    # existing entry still constructs.
+    heat_capacity: float = 1.0
     # Temperature a FIRE cell (or other heat source) of this material holds
     # while burning. Phase 02 sets WOOD/PLANT burn_temp on the cell when they
     # ignite; FIRE's own rule maintains its burn_temp each step.
@@ -100,6 +105,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=0.0,
         phase=Phase.GAS,
         conductivity=0.10,
+        heat_capacity=1.0,
     ),
     ElementId.SAND: Element(
         id=ElementId.SAND,
@@ -108,6 +114,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=1.5,
         phase=Phase.POWDER,
         conductivity=0.15,
+        heat_capacity=1.5,
         melt_point=1700,  # above this temp, sand melts -> GLASS (Phase 03)
     ),
     # The entries below are populated now with realistic placeholder values so
@@ -120,6 +127,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=1.0,
         phase=Phase.LIQUID,
         conductivity=0.35,
+        heat_capacity=4.0,
         boil_point=100,
         freeze_point=0,
     ),
@@ -130,6 +138,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=10.0,
         phase=Phase.SOLID,
         conductivity=0.08,
+        heat_capacity=2.0,
     ),
     ElementId.WOOD: Element(
         id=ElementId.WOOD,
@@ -139,6 +148,7 @@ ELEMENTS: dict[ElementId, Element] = {
         phase=Phase.SOLID,
         flammability=0.25,  # legacy/unused for spread (Phase 02 removes reader); kept
         conductivity=0.12,
+        heat_capacity=1.5,
         flashpoint=300,  # ignites when its own temp exceeds 300
         burn_temp=800,  # holds ~800 while burning
     ),
@@ -150,6 +160,7 @@ ELEMENTS: dict[ElementId, Element] = {
         phase=Phase.GAS,
         temp_spawn=800,  # a painted fire starts hot
         conductivity=0.50,
+        heat_capacity=0.5,
         burn_temp=800,
     ),
     ElementId.SMOKE: Element(
@@ -159,6 +170,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=0.05,
         phase=Phase.GAS,
         conductivity=0.20,
+        heat_capacity=0.5,
     ),
     ElementId.PLANT: Element(
         id=ElementId.PLANT,
@@ -168,6 +180,7 @@ ELEMENTS: dict[ElementId, Element] = {
         phase=Phase.SOLID,
         flammability=0.4,
         conductivity=0.12,
+        heat_capacity=1.5,
         flashpoint=250,
         burn_temp=700,
     ),
@@ -185,6 +198,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=0.04,
         phase=Phase.GAS,
         conductivity=0.25,
+        heat_capacity=0.5,
         temp_spawn=120,  # warm gas on spawn
         condense_point=60,  # below this temp, condenses -> WATER
     ),
@@ -195,6 +209,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=0.92,
         phase=Phase.SOLID,
         conductivity=0.18,
+        heat_capacity=2.0,
         temp_spawn=-5,  # painted ice starts cold
         melt_point=0,  # above 0 -> WATER (0 is a VALID active threshold for ice)
     ),
@@ -205,6 +220,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=2.5,
         phase=Phase.LIQUID,
         conductivity=0.45,
+        heat_capacity=5.0,
         temp_spawn=1500,  # painted lava starts very hot
         # LAVA solidifies -> STONE below LAVA_SOLIDIFY_TEMP (a rule-level
         # constant in rules/lava.py); there is no Element field for
@@ -217,6 +233,7 @@ ELEMENTS: dict[ElementId, Element] = {
         density=2.5,
         phase=Phase.SOLID,
         conductivity=0.10,
+        heat_capacity=1.5,
         # Made only by SAND melting; static once formed (no transitions).
     ),
 }

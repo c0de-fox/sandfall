@@ -10,7 +10,7 @@ import numpy.typing as npt
 from .elements import ElementId
 from .grid import Grid
 from .rules import RULES
-from .thermal import build_conductivity_lut, diffuse_temps
+from .thermal import build_conductivity_lut, build_heat_capacity_lut, diffuse_temps
 
 
 class Simulation:
@@ -24,15 +24,16 @@ class Simulation:
 
     Each ``step`` first runs ONE vectorized heat-diffusion pass over the
     grid's temperature field (Phase 01), so every rule below it reads a
-    freshly-diffused temperature. The conductivity LUT is built once in
-    ``__init__`` (it is static for the run — it only depends on
-    ``config.COND_*`` / ``ELEMENTS``).
+    freshly-diffused temperature. The conductivity LUT and the heat-capacity
+    LUT are both built once in ``__init__`` (they are static for the run —
+    they only depend on ``config.COND_*`` / ``config.CP_*`` / ``ELEMENTS``).
     """
 
     def __init__(self, grid: Grid) -> None:
         self._grid = grid
-        # Static for the whole run: only depends on config.COND_* / ELEMENTS.
+        # Static for the whole run: only depends on config.COND_* / CP_* / ELEMENTS.
         self._cond_lut = build_conductivity_lut()
+        self._cp_lut = build_heat_capacity_lut()
 
     @property
     def grid(self) -> Grid:
@@ -45,7 +46,7 @@ class Simulation:
         # movement scan, so every rule reads a freshly-diffused temperature.
         # diffuse_temps returns a NEW int16 array (does not mutate grid._temp
         # in place), avoiding aliasing surprises in the scan that follows.
-        grid._temp = diffuse_temps(grid._temp, grid._data, self._cond_lut)
+        grid._temp = diffuse_temps(grid._temp, grid._data, self._cond_lut, self._cp_lut)
         moved: npt.NDArray[np.bool_] = np.zeros(
             (grid.height, grid.width), dtype=np.bool_
         )

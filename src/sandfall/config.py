@@ -85,12 +85,17 @@ FPS = 60
 # (AMBIENT_TEMP / TEMP_MIN / TEMP_MAX are defined at the top of elements.py and
 # re-exported here — see the import block above.)
 
-# Diffusion pre-pass tunables. diffuse_temps advances each cell toward the
-# 4-neighborhood average weighted by the cell's OWN conductivity:
-#     new = temp + rate * cond[cell] * (left+right+up+down - 4*temp)
-# Stability of this explicit stencil requires rate * max(cond) <= 0.25; the
-# defaults below (0.20 * 0.5 == 0.10) sit comfortably inside that bound, and
-# diffuse_temps additionally clips the result to [TEMP_MIN, TEMP_MAX].
+# Diffusion pre-pass tunables. diffuse_temps now uses a CONSERVATIVE face-flux
+# (finite-volume) discretization with per-cell heat capacity:
+#     flux across each interior face = k_face * rate * (t_left - t_right)
+#     k_face = (cond[left] + cond[right]) / 2      (arithmetic mean)
+#     new_t  = t + (net signed face flux into the cell) / cp[cell]
+# The signed face fluxes telescope to zero over the grid, so total heat
+# sum(cp*temp) is CONSERVED up to rounding/clip. The form reduces to standard
+# explicit diffusion with coefficient rate*k/cp, so the stability bound is
+#     rate * max(cond) / min(cp) <= 0.25
+# With the defaults below: 0.20 * 0.50 (FIRE) / 0.5 (FIRE/SMOKE/STEAM) = 0.20
+# <= 0.25 — comfortable. diffuse_temps additionally clips to [TEMP_MIN, TEMP_MAX].
 DIFFUSION_RATE = 0.20
 
 # Per-material heat conductivity (0.0 = perfect insulator, 1.0 = max). Indexed
@@ -111,6 +116,25 @@ COND_STEAM = 0.25
 COND_ICE = 0.18
 COND_LAVA = 0.45
 COND_GLASS = 0.10
+
+# Per-material heat capacity (thermal inertia / thermal mass). Divides the
+# temperature change in diffuse_temps: high cp = changes slowly = thermally
+# massive (water/stone/lava); low cp = changes fast (gases); EMPTY (air) is the
+# 1.0 baseline. Indexed by element id via build_heat_capacity_lut(). Every
+# value is > 0 (diffusion divides by cp).
+CP_EMPTY = 1.0  # air = baseline thermal mass
+CP_SAND = 1.5
+CP_WATER = 4.0  # high thermal mass (water heats/cools slowly)
+CP_STONE = 2.0
+CP_WOOD = 1.5
+CP_FIRE = 0.5  # low mass (gas-like; changes fast)
+CP_SMOKE = 0.5
+CP_PLANT = 1.5
+# Phase 03 new materials.
+CP_STEAM = 0.5
+CP_ICE = 2.0
+CP_LAVA = 5.0  # VERY high thermal mass — lava persists (solidifies ~step 27)
+CP_GLASS = 1.5
 
 # --- Heat-overlay display band (Phase 04) -----------------------------------
 # ``thermal.thermal_to_rgb`` maps the temp field's full color span across

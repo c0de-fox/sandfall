@@ -3,8 +3,9 @@
 ``diffuse_temps`` is the per-frame heat pre-pass run before the movement
 scan. These tests pin its numerical behavior headlessly (no pygame): heat
 flows hot→cold, low-conductivity materials transfer slowly, a uniform field
-is an equilibrium, the explicit stencil does not overshoot at the
-``rate*cond==0.25`` stability bound, results clip to the int16 band, and the
+is an equilibrium, the conservative face-flux stencil does not overshoot at
+the ``rate*max(cond)/min(cp)==0.25`` stability bound, results clip to the
+int16 band, total heat ``sum(cp*temp)`` is conserved over many steps, and the
 input array is never mutated.
 """
 
@@ -14,7 +15,12 @@ import numpy as np
 
 from sandfall.config import AMBIENT_TEMP, HEAT_VIZ_COLD, HEAT_VIZ_HOT, TEMP_MAX
 from sandfall.elements import ElementId
-from sandfall.thermal import build_conductivity_lut, diffuse_temps, thermal_to_rgb
+from sandfall.thermal import (
+    build_conductivity_lut,
+    build_heat_capacity_lut,
+    diffuse_temps,
+    thermal_to_rgb,
+)
 
 
 def test_heat_flows_hot_to_cold() -> None:
@@ -23,7 +29,8 @@ def test_heat_flows_hot_to_cold() -> None:
     temp[1, 1] = 1000
     ids = np.full((3, 3), int(ElementId.EMPTY), dtype=np.uint8)  # COND_EMPTY
     lut = build_conductivity_lut()
-    out = diffuse_temps(temp, ids, lut, rate=0.2)
+    cp_lut = build_heat_capacity_lut()
+    out = diffuse_temps(temp, ids, lut, cp_lut, rate=0.2)
     # Center cooled; the 4 orthogonal neighbors warmed above ambient.
     assert out[1, 1] < 1000
     for y, x in [(0, 1), (2, 1), (1, 0), (1, 2)]:
@@ -40,10 +47,11 @@ def test_low_conductivity_transfers_slowly() -> None:
     base[0, 1] = 1000
     base[0, 2] = 0
     lut = build_conductivity_lut()
+    cp_lut = build_heat_capacity_lut()
     ids_stone = np.full((1, 3), int(ElementId.STONE), dtype=np.uint8)
     ids_empty = np.full((1, 3), int(ElementId.EMPTY), dtype=np.uint8)
-    out_stone = diffuse_temps(base.copy(), ids_stone, lut, rate=0.2)
-    out_empty = diffuse_temps(base.copy(), ids_empty, lut, rate=0.2)
+    out_stone = diffuse_temps(base.copy(), ids_stone, lut, cp_lut, rate=0.2)
+    out_empty = diffuse_temps(base.copy(), ids_empty, lut, cp_lut, rate=0.2)
     # The middle cell cooled more (transferred more) under the higher conductor.
     assert out_empty[0, 1] < out_stone[0, 1]
 
@@ -52,18 +60,25 @@ def test_uniform_field_is_equilibrium() -> None:
     # A uniform-temperature field does not change.
     temp = np.full((5, 5), 300, dtype=np.int16)
     ids = np.full((5, 5), int(ElementId.SAND), dtype=np.uint8)
-    out = diffuse_temps(temp, ids, build_conductivity_lut(), rate=0.2)
+    out = diffuse_temps(
+        temp, ids, build_conductivity_lut(), build_heat_capacity_lut(), rate=0.2
+    )
     assert np.array_equal(out, temp)
 
 
 def test_no_overshoot_at_stability_bound() -> None:
-    # rate*cond == 0.25 (the stability limit) must not overshoot the neighbor
-    # mean: a 0/1000 pair cannot swing past [0, 1000].
+    # The NEW stability bound is rate*max(cond)/min(cp) <= 0.25. At the bound,
+    # a 0/1000 pair cannot swing past [0, 1000]. Use uniform cp (air, CP_EMPTY)
+    # so the test isolates the cond/cp ratio; drive rate so the bound is hit
+    # exactly: rate = 0.25 * cp / cond.
     temp = np.zeros((1, 2), dtype=np.int16)
     temp[0, 1] = 1000
     ids = np.zeros((1, 2), dtype=np.uint8)  # EMPTY
     lut = build_conductivity_lut()
-    out = diffuse_temps(temp, ids, lut, rate=0.25 / lut[int(ElementId.EMPTY)])
+    cp_lut = build_heat_capacity_lut()
+    cond = lut[int(ElementId.EMPTY)]
+    cp = cp_lut[int(ElementId.EMPTY)]
+    out = diffuse_temps(temp, ids, lut, cp_lut, rate=0.25 * cp / cond)
     assert int(out.min()) >= 0
     assert int(out.max()) <= 1000
 
@@ -71,7 +86,9 @@ def test_no_overshoot_at_stability_bound() -> None:
 def test_clips_to_int16_band() -> None:
     temp = np.full((2, 2), TEMP_MAX, dtype=np.int16)
     ids = np.full((2, 2), int(ElementId.FIRE), dtype=np.uint8)
-    out = diffuse_temps(temp, ids, build_conductivity_lut(), rate=1.0)
+    out = diffuse_temps(
+        temp, ids, build_conductivity_lut(), build_heat_capacity_lut(), rate=1.0
+    )
     assert int(out.max()) <= TEMP_MAX
 
 
@@ -80,7 +97,9 @@ def test_diffuse_returns_new_array_does_not_mutate_input() -> None:
     temp[1, 1] = 800
     ids = np.full((3, 3), int(ElementId.EMPTY), dtype=np.uint8)
     before = temp.copy()
-    diffuse_temps(temp, ids, build_conductivity_lut(), rate=0.2)
+    diffuse_temps(
+        temp, ids, build_conductivity_lut(), build_heat_capacity_lut(), rate=0.2
+    )
     assert np.array_equal(temp, before)  # input untouched
 
 
@@ -99,6 +118,48 @@ def test_build_conductivity_lut_shape_and_values() -> None:
     # adds the new ids' rows).
     for eid in ElementId:
         assert 0.0 <= lut[int(eid)] <= 1.0
+
+
+def test_build_heat_capacity_lut_shape_and_values() -> None:
+    # Mirrors the conductivity LUT test: shape (len(ElementId),) float64,
+    # indexed by element id. Pin a few representative values incl. LAVA=5.0
+    # (the high-thermal-mass case driving the "lava persists" behavior).
+    from sandfall.config import CP_EMPTY, CP_FIRE, CP_LAVA, CP_STONE
+
+    lut = build_heat_capacity_lut()
+    assert lut.shape == (len(ElementId),)
+    assert lut.dtype == np.float64
+    assert lut[int(ElementId.EMPTY)] == CP_EMPTY
+    assert lut[int(ElementId.FIRE)] == CP_FIRE
+    assert lut[int(ElementId.STONE)] == CP_STONE
+    assert lut[int(ElementId.LAVA)] == CP_LAVA
+    # Every registered element has cp > 0 (diffusion divides by cp).
+    for eid in ElementId:
+        assert lut[int(eid)] > 0.0
+
+
+def test_diffusion_conserves_total_heat() -> None:
+    # The regression guard for the whole fix. Uses the plan's VALIDATED
+    # prototype scenario (3 ICE @ -5 in 25x1 air): the OLD own-conductivity
+    # stencil drained this 410 -> 0 (the "ice spreads cold far" symptom); the
+    # NEW conservative face-flux form measures 410 -> ~400 (drain ~10, the
+    # residual int16 round-to-nearest pin — the smaller cousin of the old
+    # truncation bug, accepted because float temp storage is out of scope).
+    # This bound fails loudly on the old formula (drain 410 vs the ~10 here).
+    lut = build_conductivity_lut()
+    cp_lut = build_heat_capacity_lut()
+    temp = np.full((1, 25), AMBIENT_TEMP, dtype=np.int16)
+    ids = np.full((1, 25), int(ElementId.EMPTY), dtype=np.uint8)
+    for col in (11, 12, 13):  # 3-cell ICE block at -5 in a 25-cell air row
+        temp[0, col] = -5
+        ids[0, col] = int(ElementId.ICE)
+    heat0 = float((cp_lut[ids] * temp.astype(np.float64)).sum())
+    for _ in range(60):
+        temp = diffuse_temps(temp, ids, lut, cp_lut)  # default rate
+        heat = float((cp_lut[ids] * temp.astype(np.float64)).sum())
+        # Total heat stays within +/-15 (rounding only; measured ~10). The OLD
+        # formula drained 410 -> 0, so this bound fails loudly on it.
+        assert abs(heat - heat0) <= 15.0, (heat0, heat)
 
 
 # --- Heat-overlay gradient (Phase 04) ---------------------------------------

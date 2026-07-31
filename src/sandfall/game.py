@@ -50,7 +50,7 @@ from .elements import ElementId
 from .grid import Grid, migrate_grid
 from .renderer import Renderer
 from .simulation import Simulation
-from .ui import UI
+from .ui import UI, ToolId
 
 
 def _parse_frame_cap() -> int | None:
@@ -176,16 +176,27 @@ class Game:
                 # Only button 1 (left) selects; right-click erases (see
                 # _erase_if_dragging) and must NOT select. The guard above
                 # (`event.button == 1`) enforces that — a right-click (button 3)
-                # falls through this whole elif without selecting a swatch.
-                # A left-click inside a swatch selects that element and must
-                # NOT also paint. Selection only happens on button-down; the
-                # subsequent paint-this-frame is suppressed because the cursor
-                # is still inside the reserved palette strip (see
-                # _paint_if_dragging).
+                # falls through this whole elif without selecting an item.
+                # A left-click inside a palette item dispatches by item kind:
+                # element items select that element; the Eraser TOOL maps to
+                # EMPTY (so left-drag erases — behavior preserved); Brush-shape
+                # and Magnifier are Phase-01 placeholders (no-op until Phase
+                # 02/03). Selection only happens on button-down; the subsequent
+                # paint-this-frame is suppressed because the cursor is still
+                # inside the reserved palette strip (see _paint_if_dragging).
                 mx, my = event.pos
-                sel = self._ui.swatch_at(mx, my)
-                if sel is not None:
-                    self.selected_element = sel
+                item = self._ui.item_at(mx, my)
+                if item is not None:
+                    if item.is_element:
+                        assert item.element_id is not None
+                        self.selected_element = item.element_id
+                    elif item.tool == ToolId.ERASER:
+                        # Eraser maps to EMPTY so left-drag erases (preserved).
+                        self.selected_element = ElementId.EMPTY
+                    elif item.tool == ToolId.BRUSH_SHAPE:
+                        pass  # Wired in Phase 02 (brush-shape cycle).
+                    elif item.tool == ToolId.MAGNIFY:
+                        pass  # Wired in Phase 03 (magnifier toggle).
             # NOTE: no VIDEORESIZE branch. Window resize is detected by polling
             # self._window.size every frame in _apply_resize_if_changed(); that
             # path is event-driver-independent and never recreates the window

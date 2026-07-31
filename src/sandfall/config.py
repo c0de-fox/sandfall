@@ -49,6 +49,12 @@ PALETTE_SWATCH = 24  # px size of each palette swatch (square)
 PALETTE_PADDING = 4  # px between swatches
 PALETTE_MARGIN = 8  # px margin around the palette strip / swatches
 
+# Extra space inserted between the element group and the utility group (Eraser /
+# Brush-shape / Magnifier) in the single bottom row, ON TOP of the normal
+# PALETTE_PADDING. Visually separates elements (swatches) from tools. Drives the
+# MIN_WINDOW_W math below and the layout boundary in ui.palette_layout.
+PALETTE_GROUP_GAP = 3 * PALETTE_PADDING  # 12
+
 # Height of the reserved bottom palette strip. Derived from the swatch size +
 # a margin top and bottom so swatches are visually centered. Lives in config
 # (not ui.py) so the grid geometry below can derive from it in one place.
@@ -62,16 +68,18 @@ SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
 GRID_WIDTH = INITIAL_WINDOW_W // CELL_SIZE  # 800 // 4 == 200  (initial cols)
 GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140  (initial rows)
 
-# Minimum window size. Width must fit the whole palette (12 swatches incl. the
-# Eraser: 12*24 + 11*4 + 2*8 == 348px) with margin -> 384 (the next clean
-# CELL_SIZE multiple above 348, = 96 cols, 36px of margin). Height must fit
-# the 40px palette + a usable sim area (>= 40 cells == 160px) -> 200. The
-# minimum is enforced by the compositor via ``Window.minimum_size`` (see
-# Game.__init__); compute_grid_dims additionally floor-clamps the GRID
+# Minimum window size. Width must fit the whole palette (14 items: 11 element
+# swatches + Eraser + Brush-shape + Magnifier). Width math:
+#   14 * PALETTE_SWATCH + 13 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
+#   = 14*24 + 13*4 + 12 + 2*8 = 336 + 52 + 12 + 16 = 416  (== 104 * CELL_SIZE)
+# 416 is the next clean CELL_SIZE multiple above the needed 416, = 104 cols.
+# Height must fit the 40px palette + a usable sim area (>= 40 cells == 160px)
+# -> 200. The minimum is enforced by the compositor via Window.minimum_size
+# (see Game.__init__); compute_grid_dims additionally floor-clamps the GRID
 # cols/rows to MIN_GRID_* so a tiny window still has a usable grid.
-MIN_WINDOW_W = 384
+MIN_WINDOW_W = 416
 MIN_WINDOW_H = 200
-MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 384 // 4 == 96
+MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 416 // 4 == 104
 MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 40
 
 # --- Loop -------------------------------------------------------------------

@@ -90,25 +90,33 @@ def test_compute_grid_dims_min_constants_are_consistent() -> None:
     assert MIN_GRID_ROWS == (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE
 
 
-def test_min_window_width_fits_twelve_palette_swatches() -> None:
-    """Phase 03 grew the palette 8 -> 12 swatches; MIN_WINDOW_W must fit them.
+def test_min_window_width_fits_full_palette_with_group_gap() -> None:
+    """Phase 01 reorged the palette into 11 elements + 3 utility tools with a
+    group gap; MIN_WINDOW_W must fit the wider row.
 
-    The palette row is 12 swatches (11 real elements + the Eraser), each
-    ``PALETTE_SWATCH`` square with ``PALETTE_PADDING`` between neighbors and
-    a margin at each end: 12*24 + 11*4 + 2*8 == 348px. ``MIN_WINDOW_W`` is
-    the next clean ``CELL_SIZE`` multiple above that with margin -> 384
-    (= 96 cols). This keeps the wider palette on-screen at the minimum size.
+    The palette row is 14 items (11 element swatches + Eraser + Brush-shape +
+    Magnifier), each ``PALETTE_SWATCH`` square with ``PALETTE_PADDING``
+    between neighbors, an extra ``PALETTE_GROUP_GAP`` between the element and
+    utility groups, and a margin at each end:
+    14*24 + 13*4 + 12 + 2*8 == 416px. ``MIN_WINDOW_W`` is exactly that value
+    (= 104 cols), so the gap-separated palette fits at the minimum size.
     """
     from sandfall.config import (
         MIN_WINDOW_W,
+        PALETTE_GROUP_GAP,
         PALETTE_MARGIN,
         PALETTE_PADDING,
         PALETTE_SWATCH,
     )
 
-    assert MIN_WINDOW_W == 384
-    needed = 12 * PALETTE_SWATCH + 11 * PALETTE_PADDING + 2 * PALETTE_MARGIN
-    assert needed == 348
+    assert MIN_WINDOW_W == 416
+    needed = (
+        14 * PALETTE_SWATCH
+        + 13 * PALETTE_PADDING
+        + PALETTE_GROUP_GAP
+        + 2 * PALETTE_MARGIN
+    )
+    assert needed == 416
     assert MIN_WINDOW_W >= needed
     # MIN_GRID_COLS recomputed from the bumped width.
-    assert MIN_GRID_COLS == MIN_WINDOW_W // CELL_SIZE == 96
+    assert MIN_GRID_COLS == MIN_WINDOW_W // CELL_SIZE == 104

@@ -1,11 +1,14 @@
 """In-game UI: element palette, FPS/brush readout, paused indicator.
 
-The *layout* (which swatch goes where on screen) is split from the *drawing*
-(putting pixels on a Surface). Layout is a pure function
-(:func:`palette_layout`) returning a list of :class:`Swatch` rects; hit-testing
-(:meth:`UI.swatch_at`) is pure too. Both are unit-tested headlessly in
-``tests/test_ui.py``. The :class:`UI` draw method does the pygame rendering
-and is verified manually via the running window / the ``SANDFALL_FRAMES`` seam.
+The *layout* (which palette entry goes where on screen) is split from the
+*drawing* (putting pixels on a Surface). Layout is a pure function
+(:func:`palette_layout`) returning a list of :class:`PaletteItem` rects (each
+either an element swatch or a tool button); hit-testing (:meth:`UI.item_at`) is
+pure too. The :data:`TOOL_TOOLTIPS` mapping and the element/tool tooltip text
+are pure as well. All three are unit-tested headlessly in ``tests/test_ui.py``.
+The :class:`UI` draw method does the pygame rendering (including hover tooltips
++ the dimmed placeholder buttons) and is verified manually via the running
+window / the ``SANDFALL_FRAMES`` seam.
 
 Pygame is imported lazily inside :meth:`UI.draw` so importing this module (and
 therefore the pure helpers) does not require a pygame runtime — important for
@@ -14,6 +17,7 @@ keeping the layout tests display-free.
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -27,6 +31,7 @@ from .config import (
     HIGHLIGHT_COLOR,
     PALETTE_BAR_HEIGHT,
     PALETTE_BG,
+    PALETTE_GROUP_GAP,
     PALETTE_MARGIN,
     PALETTE_PADDING,
     PALETTE_SWATCH,
@@ -39,51 +44,120 @@ if TYPE_CHECKING:
     import pygame
 
 
-@dataclass(frozen=True, slots=True)
-class Swatch:
-    """A palette entry's screen rectangle plus its element id.
+class ToolId(enum.Enum):
+    """A non-element palette tool (utility button).
 
-    Coordinates are screen pixels with origin at the top-left, matching
-    pygame. ``x``/``y`` is the top-left corner; ``w``/``h`` the size.
+    Tools are NOT elements: selecting them does not set ``selected_element``
+    (except ERASER, which conventionally maps to ``ElementId.EMPTY`` so
+    left-drag erases). Each tool has its own dispatch in Game._handle_events.
     """
 
-    element_id: ElementId
+    ERASER = enum.auto()
+    BRUSH_SHAPE = enum.auto()
+    MAGNIFY = enum.auto()
+
+
+# Tooltip label for each tool button. Pure (no pygame) so the tooltip text is
+# unit-tested headlessly alongside palette_layout. Element tooltips are derived
+# from ELEMENTS[eid].name.title() inside palette_layout.
+TOOL_TOOLTIPS: dict[ToolId, str] = {
+    ToolId.ERASER: "Eraser",
+    ToolId.BRUSH_SHAPE: "Brush Shape",
+    ToolId.MAGNIFY: "Magnifier",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class PaletteItem:
+    """One palette entry's screen rectangle plus what it selects.
+
+    A palette item is EITHER an element swatch (``element_id`` set, selects
+    that ElementId on click) OR a tool button (``tool`` set, a ToolId).
+    Exactly one of ``element_id`` / ``tool`` is non-None — an invariant
+    enforced by palette_layout and pinned by a headless test. ``tooltip`` is
+    the hover label (element name or tool name).
+
+    Coordinates are screen pixels with origin at the top-left, matching pygame.
+    ``x``/``y`` is the top-left corner; ``w``/``h`` the size.
+    """
+
     x: int
     y: int
     w: int
     h: int
+    tooltip: str
+    element_id: ElementId | None = None
+    tool: ToolId | None = None
+
+    @property
+    def is_element(self) -> bool:
+        return self.element_id is not None
+
+    @property
+    def is_tool(self) -> bool:
+        return self.tool is not None
 
     def contains(self, px: int, py: int) -> bool:
-        """True if screen pixel ``(px, py)`` lies inside this swatch."""
+        """True if screen pixel ``(px, py)`` lies inside this item."""
         return self.x <= px < self.x + self.w and self.y <= py < self.y + self.h
 
 
-def palette_layout(window_width: int, bar_y: int) -> list[Swatch]:
-    """Compute the swatch rects: every non-EMPTY element left-to-right, then
-    an Eraser swatch (ElementId.EMPTY) appended last.
+def palette_layout(window_width: int, bar_y: int) -> list[PaletteItem]:
+    """Compute the palette items: elements, then a group gap, then tools.
 
-    Pure: no pygame. Real elements are laid out in :class:`ElementId`
-    ascending order starting from the left margin, each
-    ``PALETTE_SWATCH`` square with ``PALETTE_PADDING`` between neighbors,
-    vertically centered inside the palette strip whose top is ``bar_y``.
-    The Eraser is appended at the right end as a utility tool; selecting
-    it sets ``selected_element = ElementId.EMPTY`` so left-drag also
-    erases. ``window_width`` is accepted for future layouts (e.g.
-    right-alignment / wrapping) and to keep the API symmetric with the
-    window geometry; the v1 layout does not wrap.
+    Layout is a single left-aligned bottom row:
+      [11 element swatches] [group gap] [Eraser] [Brush-shape] [Magnifier]
+
+    Real elements are laid out in :class:`ElementId` ascending order (EMPTY
+    skipped) starting from the left margin, each ``PALETTE_SWATCH`` square with
+    ``PALETTE_PADDING`` between neighbors, vertically centered in the strip
+    whose top is ``bar_y``. After the last element, an EXTRA
+    ``PALETTE_GROUP_GAP`` is added (on top of the trailing PALETTE_PADDING) to
+    visibly separate the utility group. The 3 tools follow in the fixed order
+    ERASER, BRUSH_SHAPE, MAGNIFY. ``window_width`` is accepted for future
+    layouts (centering/wrap) and to keep the API symmetric with the window
+    geometry; the v1 layout does not wrap.
+
+    Pure: no pygame -> unit-tested headlessly. The Eraser is a TOOL here (not
+    an element swatch); Game maps selecting it to ``selected_element = EMPTY``
+    so left-drag still erases. Brush-shape and Magnifier ship as placeholders
+    (Phase 01); their dispatch is wired in Phases 02/03.
     """
     del window_width  # reserved for future layouts; not needed for the v1 row.
-    swatches: list[Swatch] = []
+    items: list[PaletteItem] = []
     x = PALETTE_MARGIN
     y = bar_y + PALETTE_MARGIN
+    # Element group.
     for eid in ElementId:
         if eid == ElementId.EMPTY:
             continue
-        swatches.append(Swatch(eid, x, y, PALETTE_SWATCH, PALETTE_SWATCH))
+        items.append(
+            PaletteItem(
+                x,
+                y,
+                PALETTE_SWATCH,
+                PALETTE_SWATCH,
+                tooltip=ELEMENTS[eid].name.title(),
+                element_id=eid,
+            )
+        )
         x += PALETTE_SWATCH + PALETTE_PADDING
-    # Eraser tool appended last (reuses ElementId.EMPTY; left-drag erases).
-    swatches.append(Swatch(ElementId.EMPTY, x, y, PALETTE_SWATCH, PALETTE_SWATCH))
-    return swatches
+    # Group gap (extra space separating elements from utilities).
+    x += PALETTE_GROUP_GAP
+    # Utility group: Eraser, Brush-shape, Magnifier.
+    for tool in (ToolId.ERASER, ToolId.BRUSH_SHAPE, ToolId.MAGNIFY):
+        items.append(
+            PaletteItem(
+                x,
+                y,
+                PALETTE_SWATCH,
+                PALETTE_SWATCH,
+                tooltip=TOOL_TOOLTIPS[tool],
+                tool=tool,
+            )
+        )
+        x += PALETTE_SWATCH + PALETTE_PADDING
+    return items
 
 
 def format_hud(fps: float, brush_radius: int, count: int) -> str:
@@ -110,7 +184,7 @@ class UI:
     _window_width: int
     _window_height: int
     _bar_y: int
-    _swatches: list[Swatch]
+    _items: list[PaletteItem]
     _font: pygame.font.Font | None
     _bar_surf: pygame.Surface | None
 
@@ -119,7 +193,7 @@ class UI:
         self._window_height = window_height
         # Palette strip occupies the bottom PALETTE_BAR_HEIGHT pixels.
         self._bar_y = window_height - PALETTE_BAR_HEIGHT
-        self._swatches = palette_layout(window_width, self._bar_y)
+        self._items = palette_layout(window_width, self._bar_y)
         self._font = None
         self._bar_surf = None
 
@@ -135,13 +209,13 @@ class UI:
         self._window_width = window_width
         self._window_height = window_height
         self._bar_y = window_height - PALETTE_BAR_HEIGHT
-        self._swatches = palette_layout(window_width, self._bar_y)
+        self._items = palette_layout(window_width, self._bar_y)
         self._bar_surf = None
 
     @property
-    def swatches(self) -> list[Swatch]:
+    def items(self) -> list[PaletteItem]:
         """The cached palette layout (read-only view)."""
-        return self._swatches
+        return self._items
 
     @property
     def bar_y(self) -> int:
@@ -152,15 +226,15 @@ class UI:
         """True if screen pixel ``(px, py)`` is inside the palette strip.
 
         The Game uses this to suppress painting while the cursor is over the
-        palette so the user can click swatches without painting underneath.
+        palette so the user can click items without painting underneath.
         """
         return py >= self._bar_y
 
-    def swatch_at(self, px: int, py: int) -> ElementId | None:
-        """Return the element whose swatch contains ``(px, py)``, or None."""
-        for s in self._swatches:
-            if s.contains(px, py):
-                return s.element_id
+    def item_at(self, px: int, py: int) -> PaletteItem | None:
+        """Return the palette item containing ``(px, py)``, or None."""
+        for item in self._items:
+            if item.contains(px, py):
+                return item
         return None
 
     def draw(
@@ -200,28 +274,68 @@ class UI:
             cx = self._window_width // 2 - paused_surf.get_width() // 2
             screen.blit(paused_surf, (cx, PALETTE_MARGIN))
 
-        # Palette strip + swatches.
+        # Palette strip + items.
         assert self._bar_surf is not None
         screen.blit(self._bar_surf, (0, self._bar_y))
-        for s in self._swatches:
-            rect = (s.x, s.y, s.w, s.h)
-            if s.element_id == ElementId.EMPTY:
-                # EMPTY's registered color is (0,0,0) — invisible on the dark
-                # bar — so the Eraser swatch is rendered with a distinct
-                # light-gray fill + darker border + an "E" glyph.
-                pygame.draw.rect(screen, ERASER_SWATCH_COLOR, rect)
-                pygame.draw.rect(screen, ERASER_SWATCH_BORDER, rect, 1)
+        for item in self._items:
+            rect = (item.x, item.y, item.w, item.h)
+            if item.is_element:
+                # Element swatch: fill with the element's registered color.
+                assert item.element_id is not None  # is_element guarantees this
+                pygame.draw.rect(screen, ELEMENTS[item.element_id].color, rect)
+            else:
+                # Tool button. Eraser is functional; Brush-shape and Magnifier
+                # are Phase-01 placeholders rendered DIMMED so a click that does
+                # nothing is not mistaken for a bug (their dispatch arrives in
+                # Phase 02/03). Placeholder styling pinned in the phase
+                # reflection: dim fill + dark border + muted glyph.
+                assert item.tool is not None
+                if item.tool == ToolId.ERASER:
+                    fill, border, glyph, glyph_color = (
+                        ERASER_SWATCH_COLOR,
+                        ERASER_SWATCH_BORDER,
+                        ERASER_LABEL,
+                        ERASER_SWATCH_BORDER,
+                    )
+                else:  # BRUSH_SHAPE / MAGNIFY placeholders (dimmed).
+                    glyph = "B" if item.tool == ToolId.BRUSH_SHAPE else "Z"
+                    fill = (55, 55, 60)
+                    border = (35, 35, 40)
+                    glyph_color = (120, 120, 130)
+                pygame.draw.rect(screen, fill, rect)
+                pygame.draw.rect(screen, border, rect, 1)
                 assert self._font is not None
-                label = self._font.render(ERASER_LABEL, True, ERASER_SWATCH_BORDER)
+                label = self._font.render(glyph, True, glyph_color)
                 screen.blit(
                     label,
                     (
-                        s.x + (s.w - label.get_width()) // 2,
-                        s.y + (s.h - label.get_height()) // 2,
+                        item.x + (item.w - label.get_width()) // 2,
+                        item.y + (item.h - label.get_height()) // 2,
                     ),
                 )
-            else:
-                color = ELEMENTS[s.element_id].color
-                pygame.draw.rect(screen, color, rect)
-            if s.element_id == active:
+            # Active outline: element items highlight on their id; the Eraser
+            # tool highlights when EMPTY is the selected element (so
+            # left-drag-erase keeps its highlight). Placeholders are never
+            # active in Phase 01.
+            is_active = (item.is_element and item.element_id == active) or (
+                item.tool == ToolId.ERASER and active == ElementId.EMPTY
+            )
+            if is_active:
                 pygame.draw.rect(screen, HIGHLIGHT_COLOR, rect, 2)
+
+        # Hover tooltip: render the hovered item's ``.tooltip`` just above the
+        # palette bar, left-aligned with the cursor and clamped to the window
+        # so it never overlaps the playfield or spills off-screen. The tooltip
+        # TEXT is pure (item.tooltip) and headlessly asserted; only placement
+        # is visual.
+        mx, my = pygame.mouse.get_pos()
+        hit = self.item_at(mx, my)
+        if hit is not None:
+            assert self._font is not None
+            tip = self._font.render(hit.tooltip, True, FPS_COLOR)
+            tx = max(
+                PALETTE_MARGIN,
+                min(mx, self._window_width - tip.get_width() - PALETTE_MARGIN),
+            )
+            ty = self._bar_y - tip.get_height() - 2
+            screen.blit(tip, (tx, ty))

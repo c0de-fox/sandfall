@@ -273,6 +273,35 @@ def test_swap_carries_temp() -> None:
     assert grid.get_temp(1, 1) == 900
 
 
+def test_grid_move_swaps_id_life_and_temp() -> None:
+    """Grid.move exchanges id AND life AND temp across the two cells (raw swap).
+
+    Pins the fast-path used by rules._common.swap: a single numpy
+    tuple-assignment per array with no bounds check and no clip. Verifies the
+    tuple-swap evaluates the RHS before assigning (so each cell ends up with the
+    OTHER cell's value, not its own) and that all three parallel arrays carry.
+    """
+    grid = Grid(width=3, height=3)
+    # Cell A: SAND, life 12, hot.
+    grid.set(0, 0, ElementId.SAND)
+    grid.set_life(0, 0, 12)
+    grid.set_temp(0, 0, 900)
+    # Cell B: WATER, life 0, cold.
+    grid.set(1, 1, ElementId.WATER)
+    grid.set_life(1, 1, 0)
+    grid.set_temp(1, 1, 10)
+
+    grid.move(0, 0, 1, 1)
+
+    # All three arrays swapped: A took B's values, B took A's values.
+    assert grid.get(0, 0) == ElementId.WATER
+    assert grid.get_life(0, 0) == 0
+    assert grid.get_temp(0, 0) == 10
+    assert grid.get(1, 1) == ElementId.SAND
+    assert grid.get_life(1, 1) == 12
+    assert grid.get_temp(1, 1) == 900
+
+
 def test_fill_circle_resets_temp_to_ambient() -> None:
     from sandfall.config import AMBIENT_TEMP
 

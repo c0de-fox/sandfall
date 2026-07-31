@@ -234,6 +234,38 @@ class Grid:
             value = TEMP_MAX
         self._temp[y, x] = value
 
+    def move(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Swap the contents (element id AND life AND temp) of two cells, raw.
+
+        This is the fast path used by :func:`sandfall.rules._common.swap`: it
+        exchanges all three parallel arrays (``_data``, ``_life``, ``_temp``)
+        at ``(x1, y1)`` and ``(x2, y2)`` in a single numpy tuple-assignment per
+        array, with **no per-access bounds check** and **no clipping**.
+
+        Precondition (the caller MUST guarantee): both ``(x1, y1)`` and
+        ``(x2, y2)`` are in bounds. Every ``swap`` call site pre-checks bounds
+        today (see the audit in ``.agent/tasks/perf-grid-move/01-grid-move.md``),
+        so this holds at every caller. A raw numpy index on an out-of-bounds
+        cell raises ``IndexError`` (loudly) rather than the silent no-op that
+        :meth:`set` / :meth:`set_temp` perform -- so a missed pre-check fails
+        loudly in the suite, not silently.
+
+        No clip is needed (and none is applied): every stored value is already
+        in-band because the only writers (:meth:`set_temp` clips to
+        ``[TEMP_MIN, TEMP_MAX]``, :meth:`set_life` clips to ``[0, 255]``, and
+        :meth:`set` for ids) clip at write time, so swapping two in-band values
+        cannot leave the band. The three arrays are independent (no aliasing
+        between them); the tuple-assignment evaluates each RHS fully before
+        assigning, so it is a correct two-cell exchange even though source and
+        destination share one array.
+        """
+        d = self._data
+        d[y1, x1], d[y2, x2] = d[y2, x2], d[y1, x1]
+        life = self._life
+        life[y1, x1], life[y2, x2] = life[y2, x2], life[y1, x1]
+        temp = self._temp
+        temp[y1, x1], temp[y2, x2] = temp[y2, x2], temp[y1, x1]
+
     def fill_circle(
         self,
         cx: int,

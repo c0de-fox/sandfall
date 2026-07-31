@@ -75,20 +75,16 @@ def seed_steam_life() -> int:
 def swap(grid: Grid, x1: int, y1: int, x2: int, y2: int) -> None:
     """Swap the contents (element id AND life AND temp) of two in-bounds cells.
 
-    Both cells must be in bounds. Carrying life and temp along on every move
-    is what keeps FIRE/SMOKE lifetimes and per-cell temperatures correct when
-    those cells get pushed around (e.g. fire rising, sand displacing a cell
-    that later becomes fire).
+    Delegates to :meth:`sandfall.grid.Grid.move`, the raw 3-array element swap
+    (one numpy tuple-assignment per array, no per-access bounds check, no
+    clipping) -- the fast path that replaced the old 12-call get/set sequence.
+    Carrying life and temp along on every move is what keeps FIRE/SMOKE
+    lifetimes and per-cell temperatures correct when those cells get pushed
+    around (e.g. fire rising, sand displacing a cell that later becomes fire).
+
+    Precondition (inherited from ``Grid.move``): both cells must be in bounds.
+    Every caller pre-checks bounds today (see the audit in
+    ``.agent/tasks/perf-grid-move/01-grid-move.md``); a raw index on an OOB
+    cell raises ``IndexError`` rather than failing silently.
     """
-    a = grid.get(x1, y1)
-    b = grid.get(x2, y2)
-    grid.set(x1, y1, b)
-    grid.set(x2, y2, a)
-    la = grid.get_life(x1, y1)
-    lb = grid.get_life(x2, y2)
-    grid.set_life(x1, y1, lb)
-    grid.set_life(x2, y2, la)
-    ta = grid.get_temp(x1, y1)
-    tb = grid.get_temp(x2, y2)
-    grid.set_temp(x1, y1, tb)
-    grid.set_temp(x2, y2, ta)
+    grid.move(x1, y1, x2, y2)

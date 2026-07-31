@@ -102,6 +102,16 @@ with equal probability, to avoid a leftward bias):
 4. Call the rule. If it returns a destination `(dx, dy)`, mark
    `moved[dy, dx] = True` so that cell is not processed again this frame.
 
+The x scan is **sparse**: instead of iterating the full `range(width)` of each
+row, the scan computes the non-empty x indices of each row with
+`np.nonzero(row)[0]` and visits only those. An entirely-empty row is skipped
+in a single numpy call. This is a performance optimization only — empty cells
+were no-ops before (step 2 above just `continue`d), so the result is
+**identical** to the old full-row scan. (Because the scan now reads the raw
+`grid.array` directly, a cheap mid-scan re-check re-reads the cell and skips
+it if it emptied/transformed earlier in the same scan.) The heat-diffusion
+pre-pass is unchanged — it is already one whole-grid vectorized op.
+
 ## Temperature field
 
 The `temp` array is advanced by a **separate vectorized heat-diffusion pass**

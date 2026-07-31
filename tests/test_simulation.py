@@ -147,3 +147,78 @@ def test_sand_sinks_through_water() -> None:
     # Sand swaps with the water directly below it.
     assert grid.get(0, 2) == ElementId.WATER
     assert grid.get(0, 3) == ElementId.SAND
+
+
+def test_sparse_scan_piles_sand_on_floor_in_mostly_empty_grid() -> None:
+    """Regression guard for the sparse (non-empty-only) scan path.
+
+    A wide, mostly-empty grid with a full floor and a column of sand well
+    above it: the sparse scan must still settle every grain into a stable
+    pile on the floor. The empty cells that are now skipped were no-ops
+    before, so the result is identical to the old full-row scan. Pins that
+    sparsifying the scan did not break movement at scale.
+
+    Asserts the physical settling invariant (every grain supported from
+    below, the pile reaches the floor, no grain lost) rather than exact
+    positions -- four grains of sand pile into a pyramid with one apex
+    grain one row above the base, which is the correct stable shape (and
+    what the old full-scan also produced).
+    """
+    _seed()
+    width, height = 20, 12
+    grid = Grid(width=width, height=height)
+    for x in range(width):
+        grid.set(x, height - 1, ElementId.STONE)
+    # A column of sand in the upper-middle, surrounded by air on all sides.
+    for y in range(0, 4):
+        grid.set(width // 2, y, ElementId.SAND)
+    sim = Simulation(grid)
+
+    for _ in range(60):
+        sim.step()
+
+    sand_mask = grid.array == int(ElementId.SAND)
+    assert int(sand_mask.sum()) == 4  # no sand lost
+    # Settled invariant: every grain is supported (the cell directly below is
+    # non-empty -- floor or another grain), so no sand is suspended over air.
+    for y in range(height - 1):
+        for x in range(width):
+            if sand_mask[y, x]:
+                assert grid.get(x, y + 1) != int(ElementId.EMPTY), (x, y)
+    # The pile reached the floor: at least one grain rests directly on it.
+    assert bool(sand_mask[height - 2].any())
+    # The floor is entirely intact.
+    for x in range(width):
+        assert grid.get(x, height - 1) == ElementId.STONE
+
+
+def test_sparse_scan_water_finds_its_level() -> None:
+    """Water in a mostly-empty grid settles so no grain is suspended over air.
+
+    Liquid flow is randomized; the test seeds the RNG and asserts the settled
+    physical invariant (no water cell with an empty cell directly below it)
+    after a generous step budget. Pins that liquid flow still works under the
+    sparse scan (empty cells skipped were no-ops before).
+    """
+    _seed()
+    width, height = 12, 10
+    grid = Grid(width=width, height=height)
+    for x in range(width):
+        grid.set(x, height - 1, ElementId.STONE)
+    # A blob of water in the upper-left, surrounded by air.
+    for y in range(0, 3):
+        for x in range(0, 4):
+            grid.set(x, y, ElementId.WATER)
+    sim = Simulation(grid)
+
+    for _ in range(120):
+        sim.step()
+
+    water_mask = grid.array == int(ElementId.WATER)
+    assert int(water_mask.sum()) == 12  # no water lost
+    # Settled invariant: no water cell has an empty cell directly below it
+    # (every water cell rests on the floor or on another water cell).
+    for y in range(height - 1):
+        for x in range(width):
+            if water_mask[y, x]:
+                assert grid.get(x, y + 1) != int(ElementId.EMPTY), (x, y)

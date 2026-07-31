@@ -22,6 +22,12 @@ class Simulation:
     A moved-this-frame guard prevents re-dispatching a cell that was moved
     *into* earlier in the same scan.
 
+    The x scan is SPARSE: only the non-empty cells of each row are visited
+    (``np.nonzero`` on the row), so empty rows and empty cells are skipped
+    cheaply instead of being iterated as no-ops. This is a performance
+    optimization only -- empty cells were no-ops before, so the result is
+    identical to the old full-row scan.
+
     Each ``step`` first runs ONE vectorized heat-diffusion pass over the
     grid's temperature field (Phase 01), so every rule below it reads a
     freshly-diffused temperature. The conductivity LUT and the heat-capacity
@@ -50,17 +56,27 @@ class Simulation:
         moved: npt.NDArray[np.bool_] = np.zeros(
             (grid.height, grid.width), dtype=np.bool_
         )
-        for y in range(grid.height - 1, -1, -1):
-            xs = (
-                range(grid.width)
-                if random.random() < 0.5
-                else range(grid.width - 1, -1, -1)
-            )
+        # Movement scan: y-descending (bottom -> top) so a single grain falls
+        # at most one cell per step (no teleporting through the grid). The x
+        # direction is randomized per row to avoid left bias. SPARSE: only
+        # non-empty cells of each row are visited (np.nonzero on the row),
+        # skipping the (frequently many) empty cells that were no-ops before.
+        data = grid.array  # raw (H, W) uint8; read directly, no per-cell get() overhead
+        for y in range(grid.height - 1, -1, -1):  # y-descending -- UNCHANGED
+            xs = np.nonzero(data[y])[0]  # non-empty x's this row (ascending)
+            if xs.size == 0:
+                continue  # empty row -> skipped in one numpy call
+            if random.random() < 0.5:  # per-row random direction -- UNCHANGED
+                xs = xs[::-1]
             for x in xs:
+                x = int(x)  # numpy intp -> plain int (mypy + rule args)
                 if moved[y, x]:
                     continue
-                eid = grid.get(x, y)
-                if eid == ElementId.EMPTY:
+                # Mid-scan re-check: a cell non-empty at nonzero-time may have
+                # emptied/transformed earlier in this scan (fire expired,
+                # erased, displaced). Re-read the raw array and skip if now empty.
+                eid = int(data[y, x])
+                if eid == int(ElementId.EMPTY):
                     continue
                 fn = RULES.get(ElementId(eid))
                 if fn is None:

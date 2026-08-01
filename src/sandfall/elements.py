@@ -55,6 +55,14 @@ class ElementId(IntEnum):
     persistent-cold-source model, named and tuned realistically at CO2's
     sublimation point). Same shape as the prior extensions; existing values
     0..15 are unchanged so every LUT index stays stable.
+
+    Extended again with liquid nitrogen (LN2=17) — a light LIQUID transient
+    cold source (density 0.8 < WATER 1.0 -> floats on water, like oil) that
+    re-asserts -196C (its boiling point) each step while alive and boils off
+    to EMPTY at ambient (room temp far exceeds -196). The coldest cold source,
+    so its diffusion freezes adjacent water AGGRESSIVELY before it boils away.
+    Same shape as the prior extensions; existing values 0..16 are unchanged so
+    every LUT index stays stable.
     """
 
     EMPTY = 0
@@ -78,6 +86,8 @@ class ElementId(IntEnum):
     GUNPOWDER = 15
     # --- New element (thermal-realism: dry ice cold source) ---
     DRY_ICE = 16
+    # --- New element (thermal-realism: liquid nitrogen cold source) ---
+    LN2 = 17
 
 
 class Phase(IntEnum):
@@ -352,5 +362,22 @@ ELEMENTS: dict[ElementId, Element] = {
         conductivity=0.20,
         heat_capacity=2.0,
         temp_spawn=-78,
+    ),
+    # --- Liquid nitrogen (LIQUID, transient cold source; thermal-realism) ---
+    # LIQUID with density 0.8 (< WATER 1.0 -> floats on water, like oil). Re-
+    # asserts LN2_COLD_TARGET (-196C, its boiling point) each step while alive
+    # (rules/ln2.py) -> freezes water AGGRESSIVELY (much colder than dry ice).
+    # TRANSIENT: carries a per-cell life (seed_nitrogen_life) and boils off to
+    # EMPTY at ambient (room temp far exceeds -196). temp_spawn=-196. No
+    # flashpoint/burn (it is a cold source, not a fuel).
+    ElementId.LN2: Element(
+        id=ElementId.LN2,
+        name="liquid nitrogen",
+        color=(150, 190, 235),  # pale cryogenic blue (distinct from ICE/WATER)
+        density=0.8,
+        phase=Phase.LIQUID,
+        conductivity=0.30,
+        heat_capacity=2.0,
+        temp_spawn=-196,
     ),
 }

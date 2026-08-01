@@ -71,17 +71,18 @@
   session (fire re-asserts burn-temp every step); this is the documented
   mitigation.
   `source: thermal-conservation-fix/00` Out-of-Scope + Decision Log #1 (user declined it for the fix; tracked for later).
-- **Thermal realism rework (the cold-source end state).** Revert ice to a
-  thermodynamically-realistic non-source "frozen water" that melts at `> 0°C`
-  (restoring `ICE.melt_point` use), and add **colder-than-freezing cold-source
-  elements** so freezing water requires a colder-than-freezing source — the
-  Powder Toy / Sandboxels model. Candidates: **dry ice** (~−78°C, sublimates →
-  cold gas) and **liquid nitrogen** (~−196°C, evaporates → very cold gas). This
-  is the *deliberate follow-on* to the current interim model, where ice is a
-  persistent cold source that does NOT melt in ambient (a temporary compromise
-  made so ice can freeze water until real cold sources exist). Landing this
-  rework also retires the "ice no longer melts in ambient" behavior change.
-  `source: thermal-float-ice/00` Out-of-Scope + Decision Log #3 (this round's interim persistent-cold-source ice; realistic rework is the user-stated future direction).
+- **~~Thermal realism rework (the cold-source end state).~~** SHIPPED
+  (thermal-realism plan, both phases): ice reverted to a thermodynamically-
+  realistic non-source "frozen water" that melts at `> 0°C` (restoring
+  `ICE.melt_point` use), and **colder-than-freezing cold-source elements**
+  added so freezing water requires a colder-than-freezing source — the Powder
+  Toy / Sandboxels model. **Dry ice** (~−78°C, persistent solid; Phase 01) and
+  **liquid nitrogen** (~−196°C, transient liquid that boils off; Phase 02) are
+  now the cold sources; the interim "ice does not melt in ambient" compromise
+  is retired. (A dedicated cryogenic *gas* for dry-ice sublimation / LN2
+  evaporation remains deferred — dry-ice/LAVA emits SMOKE, dry-ice/FIRE and
+  LN2 boil-off emit EMPTY for now.)
+  `source: thermal-realism/00` (this plan delivered it); `thermal-float-ice/00` Out-of-Scope + Decision Log #3 (the interim persistent-cold-source ice it superseded).
 - **Concentration / mixing system for acid-base (Scope B chemistry layer).** A
   per-cell **concentration** field for ACID/BASE (0.0–1.0) that **diffuses/mixes
   like heat** (reuses the diffusion machinery), so "diluted acid" is a real,

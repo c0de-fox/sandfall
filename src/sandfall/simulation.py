@@ -62,11 +62,16 @@ class Simulation:
     2. **Thermal change** -- a cell whose temperature changed (via diffusion
        from a heat source, or a rule) must be rescanned: phase transitions
        (water boil/freeze, wood ignite) check the cell's OWN temp.
-    3. **FIRE/LAVA persistent heat sources + their neighborhood** -- a
-       clinging fire / a lava cell re-asserts its burn-temp and reacts each
-       step but may neither move nor change identity nor (if already at
-       burn-temp) change temp, so without this rule fire/lava and their fuel
+    3. **FIRE/LAVA persistent heat sources + their neighborhood + LN2 cold
+       source** -- a clinging fire / a lava cell re-asserts its burn-temp and
+       reacts each step but may neither move nor change identity nor (if already
+       at burn-temp) change temp, so without this rule fire/lava and their fuel
        neighbors would go dormant and combustion/reactions would never chain.
+       Liquid nitrogen is included for the analogous reason: it re-asserts its
+       cold target each step AND must age (decrement its finite ``life``) each
+       step, but a pooled LN2 blob whose neighbors have already equilibrated to
+       its -196C has no movement, no identity change, and no temp change -- so
+       without this rule it would go dormant and never boil off.
     4. **Brush-painted/erased cells** -- OR-marked into ``_active`` between
        steps by :meth:`Grid.fill_circle` and consumed by the next scan (not
        carried into ``active_next`` unless the sim dynamics woke them).
@@ -161,12 +166,18 @@ class Simulation:
         #     a heat source, or a rule) must be rescanned -- phase transitions
         #     (water boil/freeze, wood ignite) check the cell's OWN temp.
         active_next |= grid._temp != temp_before
-        # (3) Persistent heat sources: FIRE and LAVA re-assert burn_temp / react
-        #     each step but may neither move nor change identity nor (if already
-        #     at burn_temp) change temp. Keep them and their neighborhood awake
-        #     so combustion chains and lava reactions proceed.
+        # (3) Persistent heat/cold sources: FIRE and LAVA re-assert burn_temp /
+        #     react each step but may neither move nor change identity nor (if
+        #     already at burn-temp) change temp. LN2 re-asserts its -196 cold
+        #     target each step AND must age (decrement life) each step, but a
+        #     pooled all-cold LN2 blob has no other wake signal -- without this
+        #     rule it would go dormant and never boil off (the pooled-LN2 stall;
+        #     see test_ln2_boils_off). Keep them and their neighborhood awake so
+        #     combustion chains, lava reactions, and LN2 boil-off proceed.
         active_next |= _dilate(
-            (data == int(ElementId.FIRE)) | (data == int(ElementId.LAVA))
+            (data == int(ElementId.FIRE))
+            | (data == int(ElementId.LAVA))
+            | (data == int(ElementId.LN2))
         )
         # (4) Brush-painted/erased cells were OR-ed into grid._active between
         #     steps (by Grid.fill_circle) and were scanned above. They are NOT

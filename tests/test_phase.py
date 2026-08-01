@@ -218,6 +218,114 @@ def test_dry_ice_sublimates_via_fire_contact() -> None:
     assert g.get(0, 0) == ElementId.EMPTY
 
 
+# --- Liquid nitrogen (transient cold liquid) -------------------------------
+
+
+def test_ln2_freezes_water_aggressively() -> None:
+    """A blob of LN2 in water freezes a patch of it before boiling off.
+
+    LN2 re-asserts LN2_COLD_TARGET (-196) while alive -- far colder than dry ice
+    (-78) -- so its diffusion freezes adjacent water fast. The freeze must
+    happen WITHIN the short life window (seed_nitrogen_life ~= 30..80), which is
+    the boil-off tuning gate (overview Risk #5). Asserts SOME ice forms.
+    """
+    from sandfall.rules._common import seed_nitrogen_life
+    from sandfall.rules.ln2 import LN2_COLD_TARGET
+
+    # Sanity: the life window the freeze must fit inside.
+    for _ in range(50):
+        assert 30 <= seed_nitrogen_life() <= 80
+
+    random.seed(0)
+    g = Grid(8, 8)
+    for y in range(8):
+        for x in range(8):
+            g.set(x, y, ElementId.WATER)
+    # Seed a 2x2 LN2 blob in the middle, each with a max-life window so it has
+    # the most time to freeze before boiling off.
+    for dy in range(2):
+        for dx in range(2):
+            g.set(3 + dx, 3 + dy, ElementId.LN2)
+            g.set_temp(3 + dx, 3 + dy, LN2_COLD_TARGET)
+            g.set_life(3 + dx, 3 + dy, 80)  # top of the window -> max freeze time
+    sim = Simulation(g)
+    assert int((g.array == int(ElementId.ICE)).sum()) == 0  # no ice yet
+    for _ in range(80):
+        sim.step()
+    ice_after = int((g.array == int(ElementId.ICE)).sum())
+    # LN2 froze some water before boiling off. Exact count depends on the
+    # seed_nitrogen_life window + LN2_COLD_TARGET; the point is freezing happened.
+    assert ice_after > 0, ice_after
+
+
+def test_ln2_boils_off() -> None:
+    """LN2 is transient: a blob left at ambient boils away to EMPTY once its
+    finite life is exhausted (room temp >> -196)."""
+    random.seed(0)
+    g = Grid(3, 3)
+    for y in range(3):
+        for x in range(3):
+            g.set(x, y, ElementId.LN2)
+            g.set_life(x, y, 80)  # top of the window
+    sim = Simulation(g)
+    for _ in range(200):  # well past the max life window
+        sim.step()
+    assert int((g.array == int(ElementId.LN2)).sum()) == 0  # all boiled off
+
+
+def test_ln2_floats_on_water() -> None:
+    """LN2 (density 0.8) is lighter than WATER (1.0): it floats -- a cell of LN2
+    directly above water, stepped many times, ends with LN2 above water (water
+    sinks through the lighter LN2). Mirrors the oil float test.
+
+    NB: LN2 re-asserts -196C, so the water column usually FREEZES to ICE during
+    the run -- that is correct cold-source behavior, not a float failure. The
+    positional assertion therefore treats WATER-or-ICE as "the water column":
+    LN2 must sit ABOVE it (it never sank below), which is the density evidence.
+    """
+    from sandfall.rules._common import can_displace
+
+    # Density relation: water displaces LN2 (water sinks); LN2 cannot displace water.
+    assert can_displace(ElementId.WATER, int(ElementId.LN2)) is True
+    assert can_displace(ElementId.LN2, int(ElementId.WATER)) is False
+
+    random.seed(0)
+    g = Grid(1, 4)
+    g.set(0, 0, ElementId.LN2)
+    g.set_life(0, 0, 80)  # keep it alive long enough to settle
+    g.set(0, 1, ElementId.WATER)
+    sim = Simulation(g)
+    for _ in range(40):
+        sim.step()
+    # LN2 is lighter -> it ends above the water column (40 steps < 80 so the LN2
+    # is still alive). The water may have frozen to ICE from the -196 cold; count
+    # both as "the water column" and assert LN2 sits above it.
+    ln2_y = [y for y in range(g.height) if g.get(0, y) == ElementId.LN2]
+    water_col_y = [
+        y for y in range(g.height) if g.get(0, y) in (ElementId.WATER, ElementId.ICE)
+    ]
+    assert ln2_y and water_col_y
+    assert min(ln2_y) < max(water_col_y)  # LN2 is above the water column
+
+
+def test_paint_brush_ln2_seeds_life() -> None:
+    """A painted LN2 disk's cells get a finite life (seed_nitrogen_life) and the
+    -196 spawn temp. Without the life seeding, painted LN2 would have life 0 and
+    boil off on the next step."""
+    g = Grid(10, 10)
+    paint_brush(g, 5, 5, 1, ElementId.LN2)
+    ln2_cells = [
+        (x, y)
+        for y in range(g.height)
+        for x in range(g.width)
+        if g.get(x, y) == ElementId.LN2
+    ]
+    assert ln2_cells, "expected a disk of LN2 cells to be painted"
+    for x, y in ln2_cells:
+        assert 30 <= g.get_life(x, y) <= 80, (x, y)
+        assert g.get_temp(x, y) == ELEMENTS[ElementId.LN2].temp_spawn, (x, y)
+
+
 # --- STEAM -> WATER (condense) ----------------------------------------------
 
 

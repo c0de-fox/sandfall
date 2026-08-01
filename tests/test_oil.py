@@ -145,7 +145,7 @@ def test_oil_not_in_acid_resist_set() -> None:
 # --- renderer LUT grew ------------------------------------------------------
 
 
-def test_color_lut_has_17_rows() -> None:
-    """build_color_lut sizes from len(ElementId) -> 17 rows after DRY_ICE
-    (dry ice, added after gunpowder, grew the enum to 17)."""
-    assert build_color_lut().shape == (17, 3)
+def test_color_lut_has_18_rows() -> None:
+    """build_color_lut sizes from len(ElementId) -> 18 rows after LN2
+    (liquid nitrogen, added after dry ice, grew the enum to 18)."""
+    assert build_color_lut().shape == (18, 3)

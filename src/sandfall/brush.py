@@ -3,8 +3,8 @@
 This is the link between the mouse and the grid. :func:`paint_brush` wraps
 :meth:`Grid.fill_circle` (which takes a :class:`~sandfall.grid.BrushShape` to
 paint either a disk or a square) and adds the per-cell lifetime seeding that
-FIRE/SMOKE require, plus the per-cell spawn-temperature seeding (Phase 01)
-that every element's ``temp_spawn`` defines. It is a pure helper (no pygame)
+FIRE/SMOKE/STEAM/LN2 require, plus the per-cell spawn-temperature seeding
+(Phase 01) that every element's ``temp_spawn`` defines. It is a pure helper (no pygame)
 so the life-seeding / temp-seeding behavior is unit-testable headlessly —
 which is how the Phase 04 deferred bug ("painted fire dies instantly because
 ``fill_circle`` zeros life") is covered by a regression test in
@@ -24,7 +24,12 @@ from collections.abc import Callable
 
 from .elements import AMBIENT_TEMP, ELEMENTS, ElementId
 from .grid import BrushShape, Grid
-from .rules import seed_fire_life, seed_smoke_life, seed_steam_life
+from .rules import (
+    seed_fire_life,
+    seed_nitrogen_life,
+    seed_smoke_life,
+    seed_steam_life,
+)
 
 
 def paint_brush(
@@ -45,10 +50,11 @@ def paint_brush(
       temperature to its element's ``temp_spawn`` (uniformly for ALL elements
       — most default to ``AMBIENT_TEMP`` so the write is skipped; FIRE and
       LAVA are hot, ICE is cold);
-    * for FIRE, SMOKE, and STEAM only, seeds each painted cell's life via the
-      canonical :func:`seed_fire_life` / :func:`seed_smoke_life` /
-      :func:`seed_steam_life` helpers. Without this seeding pass, painted
-      FIRE/SMOKE/STEAM would have life 0 and expire on the very next step.
+    * for FIRE, SMOKE, STEAM, and LN2 only, seeds each painted cell's life via
+      the canonical :func:`seed_fire_life` / :func:`seed_smoke_life` /
+      :func:`seed_steam_life` / :func:`seed_nitrogen_life` helpers. Without
+      this seeding pass, painted FIRE/SMOKE/STEAM/LN2 would have life 0 and
+      expire on the very next step.
 
     The footprint walk respects ``shape``: SQUARE walks the whole bounding
     box (corners included); DISK walks only the radius-tested disk. This is
@@ -69,6 +75,8 @@ def paint_brush(
         seed = seed_smoke_life
     elif element_id == ElementId.STEAM:
         seed = seed_steam_life
+    elif element_id == ElementId.LN2:
+        seed = seed_nitrogen_life
     else:
         seed = None
     # No work to do unless this element needs a hot spawn-temp or life seeding.

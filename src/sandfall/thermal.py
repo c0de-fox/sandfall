@@ -24,6 +24,7 @@ from .config import (
     COND_GUNPOWDER,
     COND_ICE,
     COND_LAVA,
+    COND_LN2,
     COND_OIL,
     COND_PLANT,
     COND_SAND,
@@ -41,6 +42,7 @@ from .config import (
     CP_GUNPOWDER,
     CP_ICE,
     CP_LAVA,
+    CP_LN2,
     CP_OIL,
     CP_PLANT,
     CP_SAND,
@@ -90,6 +92,8 @@ def build_conductivity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.GUNPOWDER)] = COND_GUNPOWDER
     # Dry ice (persistent cold-source solid).
     lut[int(ElementId.DRY_ICE)] = COND_DRY_ICE
+    # Liquid nitrogen (transient cold-source liquid).
+    lut[int(ElementId.LN2)] = COND_LN2
     return lut
 
 
@@ -124,6 +128,8 @@ def build_heat_capacity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.GUNPOWDER)] = CP_GUNPOWDER
     # Dry ice (persistent cold-source solid).
     lut[int(ElementId.DRY_ICE)] = CP_DRY_ICE
+    # Liquid nitrogen (transient cold-source liquid).
+    lut[int(ElementId.LN2)] = CP_LN2
     return lut
 
 

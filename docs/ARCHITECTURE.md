@@ -250,13 +250,13 @@ Defined in `elements.py`:
   SMOKE=6, PLANT=7` (the v1 set, unchanged) plus the Phase-03 temperature
   additions `STEAM=8, ICE=9, LAVA=10, GLASS=11`, the acid/base reactive-liquid
   pair `ACID=12, BASE=13`, the light flammable liquid `OIL=14`, the
-  explosive powder `GUNPOWDER=15`, and the persistent cold-source solid
-  `DRY_ICE=16`. The v1 docstring once said the enum was "defined in full;
-  never add new members"; that was superseded by the temperature feature
-  (user-approved). Existing values 0..7 are unchanged, so every LUT index
-  (renderer color LUT, conductivity LUT) that the v1 code relies on stays
-  stable; new members take 8..16. `uint8` holds up to 255, so there is room
-  for more.
+  explosive powder `GUNPOWDER=15`, the persistent cold-source solid
+  `DRY_ICE=16`, and the transient cold-source liquid `LN2=17`. The v1 docstring
+  once said the enum was "defined in full; never add new members"; that was
+  superseded by the temperature feature (user-approved). Existing values 0..7
+  are unchanged, so every LUT index (renderer color LUT, conductivity LUT) that
+  the v1 code relies on stays stable; new members take 8..17. `uint8` holds up
+  to 255, so there is room for more.
 - **`Phase`** — `IntEnum` describing physical behavior: `SOLID` (static),
   `POWDER` (falls, piles), `LIQUID` (falls, spreads), `GAS` (rises,
   diffuses). Phase drives default behavior and the displacement test.
@@ -279,12 +279,13 @@ Defined in `elements.py`:
      phase-change thresholds. `0` means "this element does not undergo that
      transition" — except 0 is a VALID active threshold for water's
      `freeze_point` (water freezes at/below 0), so that rule is not guarded
-     by a `> 0` predicate. (ICE's `melt_point` (0) IS read by the realistic
-     `rules/ice.py`: a lone ice block melts to WATER when its own temp exceeds
-     0 — so ice in 20°C ambient melts, and ice does NOT freeze water on its
-     own; the colder-than-freezing cold sources `DRY_ICE` (-78) and (future)
-     LN2 (-196) cool adjacent water to/below its freeze_point, at which point
-     the WATER rule freezes it.)
+      by a `> 0` predicate. (ICE's `melt_point` (0) IS read by the realistic
+      `rules/ice.py`: a lone ice block melts to WATER when its own temp exceeds
+      0 — so ice in 20°C ambient melts, and ice does NOT freeze water on its
+      own; the colder-than-freezing cold sources do that. There are now two:
+      `DRY_ICE` (-78C, a persistent solid) and `LN2` (-196C, a transient
+      liquid that boils off to EMPTY) — their diffusion cools adjacent water
+      to/below its freeze_point, at which point the WATER rule freezes it.)
 - **`ELEMENTS`** — the registry `dict[ElementId, Element]` consulted for
   colors (renderer), density (displacement), and all thermal behavior
   (conductivity, flashpoint, burn/spawn temp, phase-change thresholds).
@@ -364,10 +365,13 @@ rule-ignited fire live for the same window of steps:
 - `seed_smoke_life()` -> `random.randint(60, 120)` steps
 - `seed_steam_life()` -> `random.randint(80, 160)` steps (steam lingers
   longer than smoke so it drifts visibly before condensing)
+- `seed_nitrogen_life()` -> `random.randint(30, 80)` steps (LN2 boils off
+  rapidly at ambient; short so it freezes a patch of water before vanishing)
 
 These are re-exported from `rules/__init__.py` and used by both the fire rule
 and `brush.paint_brush` (otherwise painted fire would have life 0 and expire
-on the very next step — the "painted fire dies instantly" bug).
+on the very next step — the "painted fire dies instantly" bug). LN2 joins
+FIRE/SMOKE/STEAM in the brush life-seeding pass.
 
 `_common.can_displace(src_id, target_id)` is the density/phase swap test: a
 cell is displacable if it is EMPTY, or if it holds a strictly lower-density

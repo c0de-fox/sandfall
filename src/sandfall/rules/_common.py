@@ -108,6 +108,19 @@ def seed_steam_life() -> int:
     return random.randint(80, 160)
 
 
+def seed_nitrogen_life() -> int:
+    """Return a freshly seeded lifetime (in steps) for a new LN2 cell.
+
+    Liquid nitrogen boils off rapidly at ambient (room temperature is far above
+    its -196C boiling point), so its window is SHORT. Tuned (first-pass 30..80)
+    so a painted blob visibly freezes a patch of adjacent water before boiling
+    away to EMPTY; pin the final range in the reflection. Both the brush and any
+    future reaction that spawns LN2 go through this so a painted LN2 and a
+    reaction-spawned one live for the same window of steps.
+    """
+    return random.randint(30, 80)
+
+
 def swap(grid: Grid, x1: int, y1: int, x2: int, y2: int) -> None:
     """Swap the contents (element id AND life AND temp) of two in-bounds cells.
 

@@ -18,7 +18,12 @@ from collections.abc import Callable
 
 from ..elements import ElementId
 from ..grid import Grid
-from ._common import seed_fire_life, seed_smoke_life, seed_steam_life
+from ._common import (
+    seed_fire_life,
+    seed_nitrogen_life,
+    seed_smoke_life,
+    seed_steam_life,
+)
 from .acid import update_acid
 from .base import update_base
 from .dry_ice import update_dry_ice
@@ -27,6 +32,7 @@ from .glass import update_glass
 from .gunpowder import update_gunpowder
 from .ice import update_ice
 from .lava import update_lava
+from .ln2 import update_ln2
 from .oil import update_oil
 from .plant import update_plant
 from .sand import update_sand
@@ -40,14 +46,15 @@ from .wood import update_wood
 # did not move. See rules/sand.py for the full contract.
 UpdateFn = Callable[[Grid, int, int], "tuple[int, int] | None"]
 
-# ``seed_fire_life`` / ``seed_smoke_life`` / ``seed_steam_life`` are
-# re-exported here so the painting path (brush) and tests can import the
-# canonical lifetime ranges from a single stable location:
+# ``seed_fire_life`` / ``seed_smoke_life`` / ``seed_steam_life`` /
+# ``seed_nitrogen_life`` are re-exported here so the painting path (brush) and
+# tests can import the canonical lifetime ranges from a single stable location:
 # ``from sandfall.rules import seed_steam_life``.
 __all__ = [
     "RULES",
     "UpdateFn",
     "seed_fire_life",
+    "seed_nitrogen_life",
     "seed_smoke_life",
     "seed_steam_life",
 ]
@@ -74,4 +81,6 @@ RULES: dict[ElementId, UpdateFn] = {
     ElementId.GUNPOWDER: update_gunpowder,
     # Dry ice (persistent cold-source solid; thermal-realism).
     ElementId.DRY_ICE: update_dry_ice,
+    # Liquid nitrogen (transient cold-source liquid; thermal-realism).
+    ElementId.LN2: update_ln2,
 }

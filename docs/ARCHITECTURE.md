@@ -56,11 +56,13 @@ arrays, all shape `(height, width)` = `(140, 200)`:
 - `life` — a **per-cell lifetime** counter (`uint8`) for finite-duration
   elements (FIRE, SMOKE, STEAM). Defaults to 0 everywhere; non-living cells
   always read 0.
-- `temp` — the **per-cell temperature** (`int16`, degrees-C-like) added by
+- `temp` — the **per-cell temperature** (`float32`, degrees-C-like) added by
   the temperature feature. Defaults to `AMBIENT_TEMP` (20) everywhere and is
-  clipped to `[TEMP_MIN, TEMP_MAX]` = `[-200, 3000]` on write. `int16` (not
-  `uint8`) because sand melts near 1700 and freezing needs sub-zero; the
-  band fits `int16` with enormous headroom.
+  clipped to `[TEMP_MIN, TEMP_MAX]` = `[-200, 3000]` on write. `float32` (not
+  `int16`) so diffusion reaches phase-transition thresholds precisely — the
+  old `int16` + round-to-nearest storage rounded a cell's ~0.5°C/step cooling
+  back up, sticking it at ~+6°C and blocking the freeze; `float32` has ample
+  precision for the `[-200, 3000]` band at fractional-degree deltas.
 
 Conventions:
 
@@ -113,7 +115,7 @@ returned "no move" and drew no RNG, so the result is **identical** to the old
 full-row scan. (Because the scan reads the raw `grid.array` directly, a cheap
 mid-scan re-check re-reads the cell and skips it if it emptied/transformed
 earlier in the same scan.) The heat-diffusion pre-pass stays whole-grid and
-unchanged — it is one numpy op over the `(H, W)` `int16` field, and it MUST
+unchanged — it is one numpy op over the `(H, W)` `float32` field, and it MUST
 stay whole-grid so dormant cells' temperatures still propagate (a heat source
 reaching a dormant cell raises its temp, which wakes it).
 
@@ -157,7 +159,7 @@ The `temp` array is advanced by a **separate vectorized heat-diffusion pass**
 that lives in the pure `thermal` module and runs ONCE at the top of
 `Simulation.step`, BEFORE the movement scan — so every rule below it reads a
 freshly-diffused temperature. Keeping diffusion out of the per-cell scan is
-what holds 60 FPS: it is one numpy op over the `(H, W)` `int16` field rather
+what holds 60 FPS: it is one numpy op over the `(H, W)` `float32` field rather
 than `O(cells)` of Python.
 
 `thermal.diffuse_temps(temp, ids, cond_lut, cp_lut, rate)` advances the
@@ -174,7 +176,8 @@ new_t  = t + (net signed face flux into the cell) / cp[cell]
   fewer faces), so no heat crosses the grid edge. No padding is used.
 - **Conservation** — the signed face fluxes telescope to zero over the grid
   (every flux appears once negative and once positive), so total heat
-  `sum(cp*temp)` is conserved up to the int16 round-to-nearest. This replaces
+  `sum(cp*temp)` is conserved up to the float32 cast residual (no rounding —
+  storage is float32, not int16). This replaces
   the non-conservative own-conductivity stencil the model originally shipped
   with (which annihilated heat/cold at material boundaries).
 - **Heat capacity / thermal inertia** — each material has a `cp` scalar
@@ -187,9 +190,10 @@ new_t  = t + (net signed face flux into the cell) / cp[cell]
   max `COND_FIRE = 0.50`, min `CP_* = 0.5` → `0.20`) sit comfortably inside
   that bound, and `diffuse_temps` additionally clips the result to
   `[TEMP_MIN, TEMP_MAX]`. Computation is `float64` throughout; the result is
-  rounded to nearest (`np.rint`, NOT truncated — truncation drained heat
-  toward 0) and cast to `int16`. The function returns a NEW array and does not
-  mutate the input; `Simulation.step` assigns the result back to `grid._temp`.
+  cast to `float32` (no rounding — the old `int16` + `np.rint` storage stalled
+  a cell cooling toward 0 at ~+6°C and blocked freezing). The function returns
+  a NEW array and does not mutate the input; `Simulation.step` assigns the
+  result back to `grid._temp`.
 - **Conductivity + heat-capacity LUTs** — `thermal.build_conductivity_lut` and
   `thermal.build_heat_capacity_lut` mirror `renderer.build_color_lut`: each is
   a `(len(ElementId),)` `float64` array, row `int(eid)` is that material's
@@ -396,7 +400,7 @@ functions so the color mapping is unit-testable without a display.
 The temperature field is normally invisible — it has no effect on element
 colors. Pressing **`H`** toggles `Game._heat_overlay`, which makes `_draw`
 call `Renderer.render_heat` instead of `render`. `render_heat` paints the
-temp field via `thermal.thermal_to_rgb` — a pure numpy map from the `int16`
+temp field via `thermal.thermal_to_rgb` — a pure numpy map from the `float32`
 temp field to an `(H, W, 3)` `uint8` image with the gradient
 **deep blue (cold) → cyan → neutral gray (ambient) → yellow → red (hot)**.
 The display band `[HEAT_VIZ_COLD, HEAT_VIZ_HOT]` (`-40`..`1000`) is mapped

@@ -8,14 +8,20 @@ reset its life entry. The shared swap helper in :mod:`sandfall.rules._common`
 does this for moves; rules that convert a cell (e.g. wood → fire) set life
 explicitly.
 
-A third parallel ``int16`` array ``temp`` carries per-cell temperature
+A third parallel ``float32`` array ``temp`` carries per-cell temperature
 (Phase 01). It mirrors the ``life`` consistency contract exactly: ``swap``
 carries temp; ``fill_circle`` resets temp to ``AMBIENT_TEMP`` (mirrors
 zeroing life); ``paint_brush`` sets element-specific ``temp_spawn`` afterward
 (mirrors life-seeding); ``migrate_grid`` copies the temp overlap. Heat
 diffusion (one vectorized op run before the movement scan) is the only
 writer that touches the whole array at once; everything else goes through
-``set_temp`` (which clips to ``[TEMP_MIN, TEMP_MAX]``).
+``set_temp`` (which clips to ``[TEMP_MIN, TEMP_MAX]``). Stored as
+``float32`` (NOT ``int16``) so diffusion reaches phase-transition thresholds
+precisely -- the old ``int16`` + round-to-nearest storage stalled a water
+cell cooling toward 0 at ~+6 (each ~0.5C/step cooling rounded back up),
+which blocked freezing; float32 has ample precision for the
+``[-200, 3000]`` band at fractional-degree deltas while keeping the cost
+of an ``int16`` array.
 
 A fourth parallel ``bool`` array ``active`` carries the per-cell wake flag
 for the dormant-cell (active-region) optimization. A cell whose ``active``
@@ -81,7 +87,7 @@ class Grid:
     _height: int
     _data: npt.NDArray[np.uint8]
     _life: npt.NDArray[np.uint8]
-    _temp: npt.NDArray[np.int16]
+    _temp: npt.NDArray[np.float32]
     _active: npt.NDArray[np.bool_]
 
     def __init__(self, width: int, height: int) -> None:
@@ -91,7 +97,7 @@ class Grid:
         self._height = height
         self._data = np.zeros((height, width), dtype=np.uint8)
         self._life = np.zeros((height, width), dtype=np.uint8)
-        self._temp = np.full((height, width), AMBIENT_TEMP, dtype=np.int16)
+        self._temp = np.full((height, width), AMBIENT_TEMP, dtype=np.float32)
         self._active = np.zeros((height, width), dtype=np.bool_)
 
     @property
@@ -120,13 +126,15 @@ class Grid:
         return self._life
 
     @property
-    def temp(self) -> npt.NDArray[np.int16]:
-        """Raw ``(height, width)`` int16 view of per-cell temperature.
+    def temp(self) -> npt.NDArray[np.float32]:
+        """Raw ``(height, width)`` float32 view of per-cell temperature.
 
         Intended read-only access (e.g. for the diffusion pass and the heat
         overlay); mutate via :meth:`set_temp` so clipping is applied
         consistently. The diffusion pre-pass assigns a freshly-computed array
         back to the grid's ``_temp`` directly (see :class:`Simulation.step`).
+        Stored as float32 so diffusion reaches phase-transition thresholds
+        precisely (no int16 rounding stall).
         """
         return self._temp
 
@@ -209,8 +217,8 @@ class Grid:
             value = 255
         self._life[y, x] = value
 
-    def get_temp(self, x: int, y: int) -> int:
-        """Return the temperature at ``(x, y)`` as a plain ``int``.
+    def get_temp(self, x: int, y: int) -> float:
+        """Return the temperature at ``(x, y)`` as a plain ``float``.
 
         Raises ``IndexError`` if out of bounds.
         """
@@ -218,13 +226,14 @@ class Grid:
             raise IndexError(
                 f"({x}, {y}) out of bounds for {self._width}x{self._height} grid"
             )
-        return int(self._temp[y, x])
+        return float(self._temp[y, x])
 
-    def set_temp(self, x: int, y: int, value: int) -> None:
+    def set_temp(self, x: int, y: int, value: float) -> None:
         """Set the temperature at ``(x, y)`` (clipped to ``[TEMP_MIN, TEMP_MAX]``).
 
         Out-of-bounds writes are silently ignored to mirror :meth:`set` /
-        :meth:`set_life`.
+        :meth:`set_life`. ``value`` may be a float (or int); the clip math
+        works for both (``float < int`` comparisons are exact in Python).
         """
         if not self.in_bounds(x, y):
             return

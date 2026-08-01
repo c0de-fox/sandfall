@@ -220,7 +220,7 @@ def test_temp_array_defaults_to_ambient() -> None:
 
     grid = Grid(width=4, height=4)
     assert grid.temp.shape == (4, 4)
-    assert grid.temp.dtype == np.int16
+    assert grid.temp.dtype == np.float32
     for y in range(grid.height):
         for x in range(grid.width):
             assert grid.get_temp(x, y) == AMBIENT_TEMP

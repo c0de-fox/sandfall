@@ -5,7 +5,7 @@ mapping are unit-testable headlessly. ``diffuse_temps`` is the per-frame heat
 pre-pass run by :class:`sandfall.simulation.Simulation` BEFORE the movement
 scan; ``build_conductivity_lut`` mirrors :func:`sandfall.renderer.build_color_lut`
 to turn the per-material ``COND_*`` scalars into an id-indexed LUT;
-``thermal_to_rgb`` maps the int16 temp field to an ``(H, W, 3)`` uint8 image
+``thermal_to_rgb`` maps the float32 temp field to an ``(H, W, 3)`` uint8 image
 for the heat-overlay render path (:meth:`sandfall.renderer.Renderer.render_heat`).
 """
 
@@ -100,12 +100,12 @@ def build_heat_capacity_lut() -> npt.NDArray[np.float64]:
 
 
 def diffuse_temps(
-    temp: npt.NDArray[np.int16],
+    temp: npt.NDArray[np.float32],
     ids: npt.NDArray[np.uint8],
     cond_lut: npt.NDArray[np.float64],
     cp_lut: npt.NDArray[np.float64],
     rate: float = DIFFUSION_RATE,
-) -> npt.NDArray[np.int16]:
+) -> npt.NDArray[np.float32]:
     """Advance the temperature field one CONSERVATIVE diffusion step.
 
     Finite-volume / face-flux discretization with per-cell heat capacity::
@@ -116,21 +116,24 @@ def diffuse_temps(
 
     The signed face fluxes telescope to zero over the grid (every flux appears
     once negative and once positive), so total heat ``sum(cp*temp)`` is
-    CONSERVED up to rounding/clip — this is the fix for the non-conservative
+    CONSERVED up to rounding/clip -- this is the fix for the non-conservative
     own-conductivity stencil and the int16-truncation drain the model shipped
     with. Per-cell heat capacity ``cp`` gives thermal inertia: high-cp
     materials (lava, water) change slowly; low-cp gases change fast.
 
-    Computation is float64 throughout; the result is rounded to nearest
-    (``np.rint``, NOT truncated toward zero) and cast to int16. Truncation
-    biased every cell toward 0 each step; round-to-nearest makes the rounding
-    drain negligible. The explicit form reduces to standard diffusion with
-    coefficient ``rate*k/cp``, stable when ``rate*max(cond)/min(cp) <= 0.25``
-    (defaults: 0.20*0.50/0.5 == 0.20). Walls are insulators: only INTERIOR
-    faces carry flux (edge cells have fewer faces), so no heat crosses the grid
-    edge. Pure / pygame-free -> unit-tested headlessly. Does NOT mutate
-    ``temp`` in place; the caller (:meth:`Simulation.step`) assigns the result
-    back.
+    Computation is float64 throughout; the result is cast to ``float32``
+    (storage is now float32, NOT int16 + round-to-nearest). There is no
+    rounding at all -- the old ``np.rint(...).astype(np.int16)`` rounded a
+    water cell's ~0.5C/step cooling back up, sticking it at ~+6C and
+    blocking the freeze threshold; float32 storage removes that rounding
+    drain so diffusion reaches phase-transition thresholds precisely (the
+    only residual is the ~1e-6 relative float32 cast error). The explicit
+    form reduces to standard diffusion with coefficient ``rate*k/cp``,
+    stable when ``rate*max(cond)/min(cp) <= 0.25`` (defaults:
+    0.20*0.50/0.5 == 0.20). Walls are insulators: only INTERIOR faces carry
+    flux (edge cells have fewer faces), so no heat crosses the grid edge.
+    Pure / pygame-free -> unit-tested headlessly. Does NOT mutate ``temp``
+    in place; the caller (:meth:`Simulation.step`) assigns the result back.
     """
     cond = cond_lut[ids].astype(np.float64)  # (H, W) per-cell conductivity
     cp = cp_lut[ids].astype(np.float64)  # (H, W) per-cell heat capacity
@@ -153,7 +156,7 @@ def diffuse_temps(
 
     new_t = t + div / cp  # heat capacity -> thermal inertia
     np.clip(new_t, TEMP_MIN, TEMP_MAX, out=new_t)
-    return np.rint(new_t).astype(np.int16)  # round-to-nearest (NOT trunc)
+    return new_t.astype(np.float32)  # float32 storage (no int16 rounding stall)
 
 
 # --- Heat-overlay gradient (Phase 04) ---------------------------------------
@@ -192,7 +195,7 @@ def _lerp3(
     return np.where(x <= 0.5, low, high)
 
 
-def thermal_to_rgb(temp: npt.NDArray[np.int16]) -> npt.NDArray[np.uint8]:
+def thermal_to_rgb(temp: npt.NDArray[np.float32]) -> npt.NDArray[np.uint8]:
     """Map a temperature field to an ``(H, W, 3)`` uint8 RGB image.
 
     Gradient (cold -> hot): deep blue -> cyan -> neutral gray (ambient) ->

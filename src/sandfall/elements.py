@@ -13,7 +13,7 @@ from enum import IntEnum
 # already import from config; the canonical definition is this block.
 # AMBIENT_TEMP is the resting temperature every cell initializes to and that
 # fill_circle resets to (mirrors how it zeroes life). The clip band is wide
-# enough for sand melting (~1700) and sub-zero freezing; int16 headroom is huge.
+# enough for sand melting (~1700) and sub-zero freezing; float32 headroom is huge.
 AMBIENT_TEMP = 20
 TEMP_MIN = -200
 TEMP_MAX = 3000

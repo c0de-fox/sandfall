@@ -16,6 +16,12 @@
   deferred `can_displace` LUT in **Tier 1** below is its planned follow-on).
   `source: perf-grid-move/00` (this round); flagged in
   `performance-active-set/00` + `performance-dormant-cells/00` Out-of-Scope.
+- **Float temps + ice cold source** is planned under
+  `.agent/tasks/thermal-float-ice/` (switches `_temp` to `float32` to kill the
+  int16 rounding stall that broke ice-freezing-water; reworks ice into a
+  persistent cold source so it freezes water via the thermal system). Its
+  realistic-rework follow-on is the new **Tier 2** "Thermal realism" entry
+  below; the **Cleanup** "float32 temp storage" item is consumed by this round.
 
 ---
 
@@ -54,6 +60,17 @@
   session (fire re-asserts burn-temp every step); this is the documented
   mitigation.
   `source: thermal-conservation-fix/00` Out-of-Scope + Decision Log #1 (user declined it for the fix; tracked for later).
+- **Thermal realism rework (the cold-source end state).** Revert ice to a
+  thermodynamically-realistic non-source "frozen water" that melts at `> 0°C`
+  (restoring `ICE.melt_point` use), and add **colder-than-freezing cold-source
+  elements** so freezing water requires a colder-than-freezing source — the
+  Powder Toy / Sandboxels model. Candidates: **dry ice** (~−78°C, sublimates →
+  cold gas) and **liquid nitrogen** (~−196°C, evaporates → very cold gas). This
+  is the *deliberate follow-on* to the current interim model, where ice is a
+  persistent cold source that does NOT melt in ambient (a temporary compromise
+  made so ice can freeze water until real cold sources exist). Landing this
+  rework also retires the "ice no longer melts in ambient" behavior change.
+  `source: thermal-float-ice/00` Out-of-Scope + Decision Log #3 (this round's interim persistent-cold-source ice; realistic rework is the user-stated future direction).
 
 ## Tier 3 — polish
 
@@ -80,7 +97,12 @@
 - **`float32` temp storage** — eliminates the residual ~2.4% rounding drain
   that remains after round-to-nearest (`~10/410`). Not needed for correctness,
   but a clean future tidy; `int16` storage is kept for now.
-  `source: thermal-conservation-fix/00` Decision Log #3 (round-to-nearest vs float32 trade-off) + its reflection.
+  *(**Now in progress under `thermal-float-ice/01-float-temps`** — this round.
+  The trade-off was reversed: float32 became necessary because the int16
+  round-to-nearest stall is root cause #1 of the ice-no-longer-freezes-water
+  regression. This item will be CLOSED once that phase ships; kept here only so
+  this line does not silently disappear mid-flight.)*
+  `source: thermal-conservation-fix/00` Decision Log #3 (round-to-nearest vs float32 trade-off) + its reflection; superseded by `thermal-float-ice/00` Decision Log #1.
 
 ## Also deferred (tracked for completeness — lower priority)
 

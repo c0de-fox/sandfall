@@ -108,7 +108,7 @@ class Simulation:
         grid = self._grid
         # Heat diffusion pre-pass: one vectorized op BEFORE the movement scan, so
         # every rule reads a freshly-diffused temperature. diffuse_temps returns a
-        # NEW int16 array (does not mutate grid._temp in place), so keep the OLD
+        # NEW float32 array (does not mutate grid._temp in place), so keep the OLD
         # reference for the thermal-wake mask below (no copy needed). Stays
         # WHOLE-GRID: dormant cells' temps must still propagate so a heat source
         # reaching one raises its temp and wakes it (condition 2).

@@ -86,10 +86,11 @@ MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 
 FPS = 60
 
 # --- Temperature field (Phase 01) ------------------------------------------
-# Per-cell temperature, integer degrees-C-like, stored as int16 on Grid.
-# AMBIENT_TEMP is the resting temperature every cell initializes to and that
-# fill_circle resets to (mirrors how it zeroes life). The clip band is wide
-# enough for sand melting (~1700) and sub-zero freezing; int16 headroom is huge.
+# Per-cell temperature, degrees-C-like, stored as float32 on Grid (float, not
+# int16, so diffusion reaches phase-transition thresholds precisely). AMBIENT_TEMP
+# is the resting temperature every cell initializes to and that fill_circle
+# resets to (mirrors how it zeroes life). The clip band is wide enough for sand
+# melting (~1700) and sub-zero freezing; float32 headroom is huge.
 # (AMBIENT_TEMP / TEMP_MIN / TEMP_MAX are defined at the top of elements.py and
 # re-exported here — see the import block above.)
 

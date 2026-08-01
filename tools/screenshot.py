@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from sandfall.brush import paint_brush
 from sandfall.config import CELL_SIZE, GRID_HEIGHT, GRID_WIDTH
-from sandfall.elements import ELEMENTS, ElementId
+from sandfall.elements import ElementId
 from sandfall.grid import Grid
 from sandfall.renderer import Renderer
 from sandfall.simulation import Simulation

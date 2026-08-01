@@ -12,7 +12,9 @@ place and return None, so a cell that boils/freezes does not also move):
 
 * boil -> STEAM when ``get_temp > boil_point`` (carries a warm temp so the
   newborn steam does not instantly condense);
-* freeze -> ICE when ``get_temp <= freeze_point``.
+* freeze -> ICE when ``get_temp <= freeze_point`` (the new ice is seeded at
+  ``ICE_COLD_TARGET`` so the freeze front advances this same step rather than
+  lagging a frame before ``update_ice`` re-asserts the cold).
 
 ``WATER.boil_point == 100`` and ``WATER.freeze_point == 0`` are both VALID
 active thresholds (0 is meaningful for water — it freezes at/below 0°C), so
@@ -28,6 +30,7 @@ import random
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
 from ._common import can_displace, seed_steam_life, swap
+from .ice import ICE_COLD_TARGET
 
 _WATER = ELEMENTS[ElementId.WATER]
 
@@ -54,8 +57,11 @@ def update_water(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
         return None
 
     # Freeze -> ICE (at or below freeze_point; freeze_point == 0 is valid).
+    # Seed the new ice cold (ICE_COLD_TARGET) so the freeze front advances this
+    # same step rather than lagging a frame before update_ice re-asserts.
     if t <= _WATER.freeze_point:
         grid.set(x, y, ElementId.ICE)
+        grid.set_temp(x, y, ICE_COLD_TARGET)
         return None
 
     # Straight down.

@@ -272,11 +272,15 @@ Defined in `elements.py`:
     the `COND_*` LUT.
   - `burn_temp` — temperature a FIRE cell (or other heat source) of this
     material holds while burning; the fire rule re-asserts it each step.
-  - `melt_point` / `boil_point` / `freeze_point` / `condense_point` —
-    phase-change thresholds. `0` means "this element does not undergo that
-    transition" — except 0 is a VALID active threshold for water's
-    `freeze_point` and ice's `melt_point` (water freezes at/below 0, ice
-    melts above 0), so those rules are not guarded by a `> 0` predicate.
+   - `melt_point` / `boil_point` / `freeze_point` / `condense_point` —
+     phase-change thresholds. `0` means "this element does not undergo that
+     transition" — except 0 is a VALID active threshold for water's
+     `freeze_point` (water freezes at/below 0), so that rule is not guarded
+     by a `> 0` predicate. (ICE's `melt_point` is still declared but is NOT
+     read by the rule today: ice is a persistent cold source that re-asserts
+     `ICE_COLD_TARGET` each step and melts ONLY via direct fire/lava contact
+     — see `rules/ice.py`. The field is retained for the realistic-rework
+     BACKLOG item that will revert ice to a melt-at->0 "frozen water".)
 - **`ELEMENTS`** — the registry `dict[ElementId, Element]` consulted for
   colors (renderer), density (displacement), and all thermal behavior
   (conductivity, flashpoint, burn/spawn temp, phase-change thresholds).
@@ -522,9 +526,10 @@ Adding an element is a small, well-defined change touching five places:
    hotter/colder than ambient (FIRE/LAVA/ICE), `flashpoint`/`burn_temp` if
    it is a fuel or a heat source, and whichever of `melt_point` /
    `boil_point` / `freeze_point` / `condense_point` drive its transitions
-   (recall `0` means "no transition" except for water/ice where `0` is a
-   valid active threshold). The renderer picks up its color automatically
-   via the color LUT.
+   (recall `0` means "no transition" except for water where `0` is a valid
+   active threshold; ice's `melt_point` is currently unused by its rule —
+   see `rules/ice.py` and the realistic-rework BACKLOG). The renderer picks
+   up its color automatically via the color LUT.
 3. **`rules/<name>.py`** — write an `update_<name>` function implementing the
    rule contract above. Use `_common.swap` for every move and
    `_common.can_displace` for displacement tests; set `life` explicitly for

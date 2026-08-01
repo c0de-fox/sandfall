@@ -28,6 +28,7 @@ from sandfall.brush import paint_brush
 from sandfall.elements import ELEMENTS, ElementId
 from sandfall.grid import Grid
 from sandfall.rules import seed_steam_life
+from sandfall.rules.ice import ICE_COLD_TARGET
 from sandfall.rules.lava import LAVA_SOLIDIFY_TEMP
 from sandfall.simulation import Simulation
 
@@ -69,9 +70,50 @@ def test_water_freezes_to_ice() -> None:
     0°C); the rule checks ``t <= freeze_point`` directly, NOT the spec's
     buggy ``freeze_point < 0 or True`` form (the ``or True`` would have made
     the branch always-true — a leftover that is NOT reproduced here).
+
+    The freshly-frozen ice is seeded at ``ICE_COLD_TARGET`` (Phase 02) so the
+    freeze front advances the same step rather than lagging a frame before
+    ``update_ice`` re-asserts the cold.
     """
     g = _step_single_cell(ElementId.WATER, ELEMENTS[ElementId.WATER].freeze_point - 5)
     assert g.get(0, 0) == ElementId.ICE
+    assert g.get_temp(0, 0) == ICE_COLD_TARGET  # new ice seeded cold (front advances)
+
+
+def test_ice_freeze_spreads_through_water() -> None:
+    """A block of ice in water freezes its surroundings (the freeze spreads).
+
+    The headline Phase-02 test: ice is a persistent cold source (re-asserts
+    ICE_COLD_TARGET each step), so cold propagates via diffusion into adjacent
+    water, the water cools below freeze_point, and the WATER rule freezes it
+    (seeding the new ice cold so the front keeps advancing). Prototype-measured
+    spread at ICE_COLD_TARGET=-50: 1 -> 3 -> 5 -> 9 cells over ~120 steps. This
+    is the regression guard for the 'ice no longer freezes water' bug.
+
+    It also pins the dormant-wake sufficiency finding: a real ``Simulation``
+    rebuilds its active set each step, so if the freeze spreads here the
+    existing wake conditions (movement/identity-change, thermal-change,
+    FIRE/LAVA) keep the front alive without needing ICE in the wake condition.
+    """
+    random.seed(0)
+    g = Grid(12, 12)
+    # Fill the bottom half with water.
+    for y in range(6, 12):
+        for x in range(12):
+            g.set(x, y, ElementId.WATER)
+    # Seed a small ice block in the middle of the water.
+    for dy in range(2):
+        for dx in range(2):
+            g.set(5 + dx, 7 + dy, ElementId.ICE)
+            g.set_temp(5 + dx, 7 + dy, ICE_COLD_TARGET)
+    sim = Simulation(g)
+    ice_before = int((g.array == int(ElementId.ICE)).sum())
+    assert ice_before == 4  # the 2x2 seed
+    for _ in range(120):
+        sim.step()
+    ice_after = int((g.array == int(ElementId.ICE)).sum())
+    # The freeze spread: strictly more ice than the seed. (Prototype reaches ~9.)
+    assert ice_after > ice_before, (ice_before, ice_after)
 
 
 def test_water_at_ambient_stays_water() -> None:
@@ -80,19 +122,49 @@ def test_water_at_ambient_stays_water() -> None:
     assert g.get(0, 0) == ElementId.WATER
 
 
-# --- ICE -> WATER -----------------------------------------------------------
+# --- ICE melt via fire/lava contact (NOT ambient) ---------------------------
 
 
-def test_ice_melts_to_water() -> None:
-    """Ice warmer than its melt_point (0) becomes WATER.
+def test_ice_melts_to_water_via_fire_contact() -> None:
+    """Ice melts to WATER when an orthogonal neighbor is FIRE (direct contact).
 
-    ``melt_point == 0`` is a VALID active threshold for ice (it melts above
-    0°C); the rule checks ``temp > melt_point`` directly, NOT the spec's
-    ``melt_point != 0 and ...`` form (the ``!= 0`` guard would have disabled
-    melting entirely since ice's melt_point is 0).
+    Ice no longer melts from ambient warmth (it is a persistent cold source and
+    re-asserts cold each step); only direct fire/lava contact destroys it. This
+    replaces the old thermal-melt test (ICE at 5C -> WATER), whose branch was
+    deleted because melt-at->0 is incompatible with being a cold source.
     """
-    g = _step_single_cell(ElementId.ICE, ELEMENTS[ElementId.ICE].melt_point + 5)
+    g = Grid(3, 1)
+    g.set(0, 0, ElementId.ICE)
+    g.set(1, 0, ElementId.FIRE)
+    g.set_life(1, 0, 50)  # keep fire alive through the step
+    Simulation(g).step()
     assert g.get(0, 0) == ElementId.WATER
+
+
+def test_ice_melts_to_steam_via_lava_contact() -> None:
+    """Ice flashed to STEAM when an orthogonal neighbor is LAVA (mirrors lava's
+    water->steam reaction shape)."""
+    g = Grid(3, 1)
+    g.set(0, 0, ElementId.ICE)
+    g.set(1, 0, ElementId.LAVA)
+    g.set_temp(1, 0, ELEMENTS[ElementId.LAVA].temp_spawn)  # 1500
+    Simulation(g).step()
+    assert g.get(0, 0) == ElementId.STEAM
+    assert g.get_temp(0, 0) == ELEMENTS[ElementId.STEAM].temp_spawn
+    # The lava-flashed steam got a finite life in the documented range.
+    assert STEAM_LIFE_MIN <= g.get_life(0, 0) <= STEAM_LIFE_MAX
+
+
+def test_ice_at_ambient_stays_ice() -> None:
+    """Ice at ambient does NOT melt (it re-asserts cold; only fire/lava destroy it).
+
+    Deliberate temporary behavior -- ambient melt is disabled because it is
+    incompatible with being a cold source. See BACKLOG (Thermal realism rework).
+    """
+    g = _step_single_cell(ElementId.ICE, 20)
+    assert g.get(0, 0) == ElementId.ICE
+    # And it re-asserted cold (the persistent-cold-source behavior).
+    assert g.get_temp(0, 0) == ICE_COLD_TARGET
 
 
 # --- STEAM -> WATER (condense) ----------------------------------------------

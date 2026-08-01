@@ -10,25 +10,29 @@
 
 ## Recently shipped
 
-- **Cross-platform builds + CI** (`.agent/tasks/cross-platform-ci/`) — Windows /
-  Linux / macOS single-file binaries are now built automatically by GitHub
-  Actions on every `v*` tag (`release.yml`, 3-OS matrix, per-platform asset
-  rename + release attach) and a Linux quality gate (`ci.yml`: ruff / mypy /
-  pytest + a build-smoke) runs on every push/PR. The `--onefile` `sandfall.spec`
-  needed only a header-comment refresh — it was already portable (env-driven
-  `console` + `collect_all`). **Code-signing / notarization remains deferred**
-  (needs credentials); v1 ships unsigned binaries (SmartScreen / Gatekeeper
-  caveat documented). macOS ships as a bare executable (no `.app`).
-  `source: project AGENTS.md (Future Work) + README + sandfall/00 (Windows/macOS builds + CI explicitly deferred).`
-- **`Grid.move` raw-array fast-swap** (`85f6a68`) — collapsed the per-move `swap`
-  from 12 Grid method calls to 1; ~1.6× on busy/moving scenes. Its follow-on,
-  the **`can_displace` LUT** (Tier 1), is still the next perf lever.
-- **Float temps + ice cold source** (`c575ccb`, `b2669a9`) — `_temp` is float32
-  (kills the int16 rounding stall); ice is a persistent cold source that freezes
-  water. The realistic-rework follow-on is the **Tier 2 "Thermal realism"** entry.
-- **Acid + Base** (`new-elements/01`) — `ACID=12`/`BASE=13`, consumed-on-dissolve
-  reactive liquids (acid eats all but glass; base eats all but stone; acid+base→
-  water). **Oil** (Phase 2 of `new-elements/`) is the in-progress follow-on.
+(Everything that landed recently. Commit hashes for traceability.)
+
+- **Thermal realism rework** (`7544f95`, `be7c194`) — ice reverted to a realistic
+  non-source "frozen water" (melts at >0°C); **dry ice** (DRY_ICE=16, persistent
+  solid cold source at -78°C) and **liquid nitrogen** (LN2=17, transient cold
+  liquid at -196°C that boils off) added as the real cold sources.
+- **Liquid through gas** (`752c253`) — liquids/powders now displace gases (water
+  flows through steam walls, sand falls through steam). Complements gas buoyancy.
+- **Gas buoyancy** (`a55ac54`) — steam and smoke rise through liquids.
+- **Gunpowder + explosions** (`1b911f0`) — GUNPOWDER=15; detonates via thermal
+  flashpoint (heat-triggered chain reactions); reusable `blast.explode` helper
+  (heat burst + crater + scatter, destroys everything).
+- **Acid/base neutralization steam-fix** (`05e3449`) — acid+base → hot STEAM
+  (exothermic, condenses to water); ~1:1 (dilute cascade removed).
+- **Acid + Base + Oil** (`177cf23`, `60eaf55`) — ACID=12/BASE=13 (consumed-on-
+  dissolve; acid eats all but glass, base eats all but stone); OIL=14 (light
+  flammable liquid, floats on water).
+- **Float temps** (`c575ccb`) — `_temp` float32 (kills the int16 rounding stall).
+- **Cross-platform builds + CI** (`d60654a`) — Windows/Linux/macOS binaries via
+  GitHub Actions; first release v0.1.0 shipped (unsigned; signing deferred).
+- **`Grid.move` + dormant cells + sparse scan** (`85f6a68`, `06b311d`, `03fc34d`)
+  — performance: ~60 FPS with 28k settled particles.
+- **Brush shapes + magnifier + tooltips + palette reorg** (`3c1a6b5`–`707e115`).
 
 ---
 
@@ -55,6 +59,10 @@
   `GROW_CHANCE` up; (b) making the water→growth interaction visible (a cue when
   plant is near water, or a tooltip/description noting it grows adjacent to
   water). `source:` user feedback.
+- **Fire + water extinguish mechanic** — water currently shoves FIRE aside (no
+  douse). Add a fire+water→steam/EMPTY reaction. Also unblocks fire rising
+  through liquids (gas-buoyancy excluded fire for this reason).
+  `source: liquid-through-gas/01-reflection` (fire-displacement edge), `gas-buoyancy/00`.
 - **(Perf) `can_displace` phase/density LUT** — the next busy-scene perf lever
   after `Grid.move`. `can_displace` does two `ELEMENTS` dict lookups per
   candidate neighbor; a lookup table indexed by `(src_id, target_id)` would cut
@@ -71,18 +79,10 @@
   session (fire re-asserts burn-temp every step); this is the documented
   mitigation.
   `source: thermal-conservation-fix/00` Out-of-Scope + Decision Log #1 (user declined it for the fix; tracked for later).
-- **~~Thermal realism rework (the cold-source end state).~~** SHIPPED
-  (thermal-realism plan, both phases): ice reverted to a thermodynamically-
-  realistic non-source "frozen water" that melts at `> 0°C` (restoring
-  `ICE.melt_point` use), and **colder-than-freezing cold-source elements**
-  added so freezing water requires a colder-than-freezing source — the Powder
-  Toy / Sandboxels model. **Dry ice** (~−78°C, persistent solid; Phase 01) and
-  **liquid nitrogen** (~−196°C, transient liquid that boils off; Phase 02) are
-  now the cold sources; the interim "ice does not melt in ambient" compromise
-  is retired. (A dedicated cryogenic *gas* for dry-ice sublimation / LN2
-  evaporation remains deferred — dry-ice/LAVA emits SMOKE, dry-ice/FIRE and
-  LN2 boil-off emit EMPTY for now.)
-  `source: thermal-realism/00` (this plan delivered it); `thermal-float-ice/00` Out-of-Scope + Decision Log #3 (the interim persistent-cold-source ice it superseded).
+- **More explosives** (TNT, bombs) — the `blast.explode` helper is reusable;
+  `BLAST_RADIUS` is the knob. A fuse/detonator element (gunpowder is currently
+  heat-triggered only) is the natural companion.
+  `source: gunpowder/00` Out-of-Scope.
 - **Concentration / mixing system for acid-base (Scope B chemistry layer).** A
   per-cell **concentration** field for ACID/BASE (0.0–1.0) that **diffuses/mixes
   like heat** (reuses the diffusion machinery), so "diluted acid" is a real,
@@ -122,20 +122,16 @@
   heat capacity: with WATER `cp=4` the adjacent water no longer pre-boils in
   one step, so the workaround is harmless but dead weight.
   `source: thermal-conservation-fix/00` Out-of-Scope + Decision Log #4.
-- **`float32` temp storage** — eliminates the residual ~2.4% rounding drain
-  that remains after round-to-nearest (`~10/410`). Not needed for correctness,
-  but a clean future tidy; `int16` storage is kept for now.
-  *(**Now in progress under `thermal-float-ice/01-float-temps`** — this round.
-  The trade-off was reversed: float32 became necessary because the int16
-  round-to-nearest stall is root cause #1 of the ice-no-longer-freezes-water
-  regression. This item will be CLOSED once that phase ships; kept here only so
-  this line does not silently disappear mid-flight.)*
-  `source: thermal-conservation-fix/00` Decision Log #3 (round-to-nearest vs float32 trade-off) + its reflection; superseded by `thermal-float-ice/00` Decision Log #1.
+- **`float32` temp storage** — **SHIPPED** (`c575ccb`). Was deferred as a tidy;
+  became necessary (int16 round-to-nearest stall broke ice-freezing-water). No
+  longer pending.
 
 ## Also deferred (tracked for completeness — lower priority)
 
 One-liners so this file genuinely covers every source Out-of-Scope section:
 
+- **Cold-gas / cryogenic element** — for dry-ice sublimation and LN2 evaporation
+  puffs (currently emit EMPTY/SMOKE). `source: thermal-realism/02-reflection`.
 - **Sound, particles, screen shake, shaders.** `source: sandfall/00`.
 - **Pressure / airflow simulation** (Powder Toy / Noita have it).
   `source: sandfall-temperature/00`.

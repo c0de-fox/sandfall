@@ -183,7 +183,7 @@ CP_LN2 = 2.0
 # of the gradient on BOTH sides, so an all-ambient scene reads as a flat
 # 'no thermal activity' gray rather than a tinted one.
 HEAT_VIZ_COLD = -40
-HEAT_VIZ_HOT = 1000
+HEAT_VIZ_HOT = 2000
 
 # --- Brush / element defaults (Phase 05 will let the user mutate these) -----
 DEFAULT_ELEMENT = ElementId.SAND

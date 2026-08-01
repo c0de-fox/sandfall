@@ -19,6 +19,7 @@ import numpy as np
 from sandfall.config import AMBIENT_TEMP, HEAT_VIZ_COLD, HEAT_VIZ_HOT, TEMP_MAX
 from sandfall.elements import ElementId
 from sandfall.thermal import (
+    build_colorbar_gradient,
     build_conductivity_lut,
     build_heat_capacity_lut,
     diffuse_temps,
@@ -267,3 +268,38 @@ def test_thermal_to_rgb_monotone_red_and_blue() -> None:
     blue = rgb[:, 2].astype(int)
     assert np.all(np.diff(red) >= 0)
     assert np.all(np.diff(blue) <= 0)
+
+
+# --- Colorbar gradient (Phase 02) -------------------------------------------
+# build_colorbar_gradient reuses thermal_to_rgb on a 1-D temp ramp so the H-mode
+# legend is an EXACT mirror of the per-cell heat coloring (no second gradient
+# definition to drift). Headlessly pinned: shape/dtype, the hot/cold endpoints
+# match thermal_to_rgb, and a mid-bar sample near ambient reads as neutral gray.
+
+
+def test_build_colorbar_gradient_shape_and_endpoints() -> None:
+    """The colorbar gradient is (height, 3) uint8; row 0 is the HOT endpoint
+    color (matching thermal_to_rgb(HEAT_VIZ_HOT)); the last row is the COLD
+    endpoint color (matching thermal_to_rgb(HEAT_VIZ_COLD))."""
+    grad = build_colorbar_gradient(50)
+    assert grad.shape == (50, 3)
+    assert grad.dtype == np.uint8
+    # Row 0 == thermal_to_rgb(HEAT_VIZ_HOT); last row == thermal_to_rgb(HEAT_VIZ_COLD).
+    hot = thermal_to_rgb(np.array([[HEAT_VIZ_HOT]], dtype=np.float32))[0, 0]
+    cold = thermal_to_rgb(np.array([[HEAT_VIZ_COLD]], dtype=np.float32))[0, 0]
+    assert tuple(grad[0]) == tuple(hot)
+    assert tuple(grad[-1]) == tuple(cold)
+
+
+def test_build_colorbar_gradient_ambient_is_neutral() -> None:
+    """A row near the ambient temperature reads as approximately neutral gray
+    (all channels close, no channel strongly saturated). With HEAT_VIZ_HOT well
+    above ambient, the neutral point sits near the cold end of the bar, not at
+    the geometric middle."""
+    grad = build_colorbar_gradient(1000)
+    span = HEAT_VIZ_HOT - HEAT_VIZ_COLD
+    idx = int(round((HEAT_VIZ_HOT - AMBIENT_TEMP) / span * (1000 - 1)))
+    rgb = grad[idx]
+    # Near-neutral: R and B channels close (not strongly red or blue).
+    assert abs(int(rgb[0]) - int(rgb[2])) < 15, (rgb[0], rgb[2])
+    assert rgb[0] < 250 and rgb[2] < 250

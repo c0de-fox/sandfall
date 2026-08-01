@@ -13,7 +13,7 @@ import random
 from sandfall.brush import paint_brush
 from sandfall.elements import ElementId
 from sandfall.grid import Grid
-from sandfall.simulation import Simulation
+from sandfall.simulation import FLOW_DOWN, FLOW_NONE, Simulation
 
 
 def _seed() -> None:
@@ -389,3 +389,27 @@ def test_painting_into_dormant_region_wakes_it() -> None:
     # The painted grain was scanned and fell one row (dormancy did not pin it).
     assert grid.get(width // 2, 0) == ElementId.EMPTY
     assert grid.get(width // 2, 1) == ElementId.SAND
+
+
+def test_flow_records_movement_direction() -> None:
+    """A fluid cell that moved DOWN (water falling) is recorded as FLOW_DOWN in
+    Simulation.flow; a static cell stays FLOW_NONE. A POWDER cell (sand) that
+    moves is NOT recorded (flow arrows are for fluids only -- convection
+    currents, not falling sand). The array resets each step."""
+    _seed()
+    grid = Grid(width=3, height=5)
+    grid.set(1, 0, ElementId.WATER)  # water at top, falls straight down
+    grid.set(0, 0, ElementId.SAND)  # sand at top-left, also falls
+    sim = Simulation(grid)
+
+    sim.step()
+    # Water fell from (1,0) -> source (1,0) records DOWN. flow is [y, x].
+    assert sim.flow[0, 1] == FLOW_DOWN
+    # Sand also fell from (0,0), but sand is a POWDER -> NOT recorded.
+    assert sim.flow[0, 0] == FLOW_NONE
+    # A cell that did not move has no flow.
+    assert sim.flow[0, 2] == FLOW_NONE
+
+    # flow resets each step.
+    sim.step()
+    assert sim.flow[0, 1] == FLOW_NONE

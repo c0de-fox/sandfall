@@ -159,7 +159,7 @@ ELEMENTS: dict[ElementId, Element] = {
         phase=Phase.POWDER,
         conductivity=0.15,
         heat_capacity=1.5,
-        melt_point=1700,  # above this temp, sand melts -> GLASS (Phase 03)
+        melt_point=1200,  # above this temp sand melts -> GLASS
     ),
     # The entries below are populated now with realistic placeholder values so
     # registry lookups never KeyError during development; Phase 03 tunes the

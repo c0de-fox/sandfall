@@ -7,10 +7,47 @@ import random
 import numpy as np
 import numpy.typing as npt
 
-from .elements import ElementId
+from .elements import ELEMENTS, ElementId, Phase
 from .grid import Grid
 from .rules import RULES
 from .thermal import build_conductivity_lut, build_heat_capacity_lut, diffuse_temps
+
+# Per-cell flow direction recorded during the movement scan, for the H-mode
+# flow-arrow overlay. Codes are uint8; 0 means "no movement this step". The
+# renderer (flow_arrow_samples) imports these and maps each to a unit vector.
+FLOW_NONE = 0
+FLOW_UP = 1  # dy < 0  (toward the top of the grid; +y is down)
+FLOW_DOWN = 2  # dy > 0
+FLOW_LEFT = 3  # dx < 0
+FLOW_RIGHT = 4  # dx > 0
+
+
+def _flow_code(ddx: int, ddy: int) -> int:
+    """Map a movement delta (dest - source) to a flow direction code.
+
+    Vertical-preferred on diagonals: a down-diagonal move (e.g. water flowing
+    down-left, delta (-1, +1)) records DOWN (the dominant gravity/convection
+    direction). This keeps convection (up) and gravity flow (down) legible as
+    clean vertical arrows; horizontal spread records LEFT/RIGHT.
+    """
+    if ddy < 0:
+        return FLOW_UP
+    if ddy > 0:
+        return FLOW_DOWN
+    if ddx < 0:
+        return FLOW_LEFT
+    if ddx > 0:
+        return FLOW_RIGHT
+    return FLOW_NONE  # dest == source (rules never return this, but be safe)
+
+
+# IDs of fluid (LIQUID + GAS) elements: flow arrows are recorded only for these.
+# Powders and solids still move (sand falls) but their movement is not shown in
+# the H-mode flow-arrow overlay (the user wants arrows on convection currents,
+# not on falling sand).
+_FLUID_IDS: frozenset[int] = frozenset(
+    int(e) for e in ElementId if ELEMENTS[e].phase in (Phase.LIQUID, Phase.GAS)
+)
 
 
 def _dilate(mask: npt.NDArray[np.bool_]) -> npt.NDArray[np.bool_]:
@@ -103,10 +140,22 @@ class Simulation:
         # active -- it is on the hottest path via swap; id_changed in step()
         # covers rule-driven set calls, and fill_circle covers the brush.)
         grid._active[:] = grid._data != int(ElementId.EMPTY)
+        # Per-step movement-direction field for the H-mode flow-arrow overlay.
+        # Pure render transient: NOT carried by swap/migrate_grid, NOT a wake
+        # signal. Zeroed at the start of each step(); read by the renderer via
+        # the `flow` property between steps.
+        self._flow = np.zeros((grid.height, grid.width), dtype=np.uint8)
 
     @property
     def grid(self) -> Grid:
         return self._grid
+
+    @property
+    def flow(self) -> npt.NDArray[np.uint8]:
+        """Per-cell movement direction from the LAST step, for the H-mode
+        flow-arrow overlay. Codes: 0=none, 1=up, 2=down, 3=left, 4=right
+        (see FLOW_*). Read-only view; the simulation owns the writes."""
+        return self._flow
 
     def step(self) -> None:
         """Advance the simulation by exactly one frame."""
@@ -124,6 +173,14 @@ class Simulation:
         data_before = data.copy()  # for id_changed (cheap ~0.05 ms at 200x140)
         active = grid._active
         moved = np.zeros((grid.height, grid.width), dtype=np.bool_)
+        # Reset the flow-direction overlay for this step (reallocate if a resize
+        # changed the grid shape since __init__ -- defensive; a resize builds a
+        # new Simulation, so the shape normally already matches).
+        if self._flow.shape != (grid.height, grid.width):
+            self._flow = np.zeros((grid.height, grid.width), dtype=np.uint8)
+        else:
+            self._flow.fill(0)
+        flow = self._flow
 
         # Movement scan: y-descending (bottom -> top) so a single grain falls at
         # most one cell per step (no teleporting through the grid). x direction
@@ -155,6 +212,9 @@ class Simulation:
                 if dest is not None:
                     dx, dy = dest
                     moved[dy, dx] = True
+                    flow[y, x] = (
+                        _flow_code(dx - x, dy - y) if eid in _FLUID_IDS else FLOW_NONE
+                    )
 
         # Rebuild the active set for NEXT frame from the four wake conditions.
         # (1) Movement / identity-change wake: a cell that moved or changed, or

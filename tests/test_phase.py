@@ -24,6 +24,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 from sandfall.brush import paint_brush
 from sandfall.elements import ELEMENTS, ElementId
 from sandfall.grid import Grid
@@ -162,14 +164,12 @@ def test_ice_melts_to_steam_via_lava_contact() -> None:
     assert STEAM_LIFE_MIN <= g.get_life(0, 0) <= STEAM_LIFE_MAX
 
 
-def test_ice_melts_in_ambient() -> None:
-    """Ice at ambient MELTS to WATER (realistic non-source: temp > melt_point).
+def test_ice_melts_in_ambient(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ice at ambient melts to WATER (probabilistic; monkeypatched to rate=1.0
+    for a deterministic single-step test)."""
+    import sandfall.rules.ice as ice_mod
 
-    This is the deliberate Phase-01 behavior change that retires the interim
-    persistent-cold-source model: ice no longer re-asserts cold, so a lone ice
-    block in 20C ambient warms above its melt_point and melts. (Dry ice / LN2 are
-    now the cold sources that freeze water.)
-    """
+    monkeypatch.setattr(ice_mod, "ICE_MELT_RATE", 1.0)
     g = _step_single_cell(ElementId.ICE, 20)
     assert g.get(0, 0) == ElementId.WATER
 

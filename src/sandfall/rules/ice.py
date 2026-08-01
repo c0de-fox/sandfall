@@ -25,12 +25,19 @@ moved-this-frame guard is unaffected.
 
 from __future__ import annotations
 
+import random
+
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
 from ._common import seed_steam_life
 
 _ICE = ELEMENTS[ElementId.ICE]
 _STEAM = ELEMENTS[ElementId.STEAM]
+
+# Probabilistic melt: chance/step = min(1.0, (temp - melt_point) * rate).
+# At ambient (~20C above 0): ~6%/step -> ~17 steps average. Near fire (~500C): instant.
+# Lower = ice lasts longer; higher = melts faster. Tunable after playtesting.
+ICE_MELT_RATE = 0.003
 
 # Orthogonal neighborhood for the fire/lava melt check (matches the
 # 4-neighborhood the diffusion pre-pass and lava.py use).
@@ -49,10 +56,11 @@ def update_ice(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     1. **Melt via direct fire/lava contact.** A FIRE neighbor -> become WATER; a
        LAVA neighbor -> become STEAM (the lava reaction flashes the melt to
        steam). Checked FIRST so a hot contact destroys the ice immediately.
-    2. **Thermal melt.** Otherwise, if the cell's own temp exceeds its
-       melt_point (0C), become WATER -- a lone ice block in ambient melts. (The
-       melt_point is now USED, unlike under the interim cold-source model where
-       it was declared-but-unread.)
+    2. **Thermal melt (probabilistic).** Otherwise, if the cell's own temp exceeds
+       its melt_point (0C), it has a per-step melt chance scaled by how far above
+       0 it is: `min(1.0, (temp - melt_point) * ICE_MELT_RATE)`. At ambient this
+       gives gradual melt (~17 steps); near fire/lava (hundreds of degrees) it is
+       effectively instant. (Direct fire/lava contact above is still instant.)
     """
     # 1. Direct fire/lava contact melts the ice (dramatic reactions first).
     for dx, dy in _MELT_NEIGHBORS:
@@ -69,9 +77,11 @@ def update_ice(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
             grid.set(x, y, ElementId.WATER)
             return None
 
-    # 2. Thermal melt: warmer than melt_point -> WATER (realistic ambient melt).
-    if grid.get_temp(x, y) > _ICE.melt_point:
-        grid.set(x, y, ElementId.WATER)
-        return None
+    # 2. Thermal melt (probabilistic, scaled by degrees above melt_point).
+    t = grid.get_temp(x, y)
+    if t > _ICE.melt_point:
+        if random.random() < min(1.0, (t - _ICE.melt_point) * ICE_MELT_RATE):
+            grid.set(x, y, ElementId.WATER)
+            return None
 
     return None

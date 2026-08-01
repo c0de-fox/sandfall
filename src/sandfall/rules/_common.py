@@ -5,6 +5,11 @@ These encode the cross-rule contracts used throughout the simulation:
 * :func:`can_displace` — the density/phase swap test (sand sinks in water;
   water itself only displaces EMPTY in v1 since no lower-density liquid
   exists yet).
+* :func:`is_riseable` — the gas buoyancy test (EMPTY or any LIQUID). A gas may
+  rise INTO an EMPTY cell (open air) or any LIQUID cell (buoyancy -- the gas
+  swaps with the liquid above it, gas up / liquid down). Solids and other
+  gases are not riseable. Used by the STEAM/SMOKE rise steps; the drift steps
+  stay EMPTY-only.
 * :func:`swap` — exchange two cells' element ids AND their per-cell life
   values AND their per-cell temperature. Every rule that moves a cell must
   go through this helper so the parallel ``life`` and ``temp`` arrays stay
@@ -25,6 +30,12 @@ import random
 from ..elements import ELEMENTS, ElementId, Phase
 from ..grid import Grid
 
+# Gases rise through liquids (buoyancy): a gas swaps with a LIQUID above it.
+# Precomputed once (Phase is static) so the per-cell rise check is a set lookup.
+_LIQUID_IDS: frozenset[int] = frozenset(
+    int(e) for e in ElementId if ELEMENTS[e].phase == Phase.LIQUID
+)
+
 
 def can_displace(src_id: ElementId, target_id: int) -> bool:
     """True if an element ``src_id`` may move into a cell holding ``target_id``.
@@ -39,6 +50,17 @@ def can_displace(src_id: ElementId, target_id: int) -> bool:
     src = ELEMENTS[src_id]
     target = ELEMENTS[ElementId(target_id)]
     return target.phase == Phase.LIQUID and target.density < src.density
+
+
+def is_riseable(cell_id: int) -> bool:
+    """True if a gas may rise INTO the cell holding ``cell_id``.
+
+    EMPTY (open air) or any LIQUID (buoyancy -- the gas swaps with the liquid,
+    gas up / liquid down). Solids and other gases are NOT riseable (a gas does
+    not displace stone or another gas). Used by the STEAM/SMOKE rise steps;
+    the sideways drift steps stay EMPTY-only (buoyancy is upward, not lateral).
+    """
+    return cell_id == int(ElementId.EMPTY) or cell_id in _LIQUID_IDS
 
 
 def seed_fire_life() -> int:

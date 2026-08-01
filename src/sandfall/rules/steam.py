@@ -9,7 +9,9 @@ differences:
 2. Steam has its own (wider) lifetime window via :func:`seed_steam_life` so
    it lingers longer than smoke before expiring to EMPTY.
 
-Like smoke, steam only enters EMPTY cells (no gas-gas displacement in v1).
+Like smoke, steam rises into EMPTY or a LIQUID (buoyancy -- the gas swaps with
+the liquid above it, gas up / liquid down) and drifts sideways into EMPTY only.
+No gas-gas displacement in v1 (a gas does not rise into another gas).
 The condense check runs FIRST (before aging), so a cool steam becomes water
 even on its last step of life. The rule is reactive: a condensing cell
 transforms in place and returns None (it does not also move).
@@ -25,7 +27,7 @@ import random
 
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
-from ._common import swap
+from ._common import is_riseable, swap
 
 # Per-step chance to drift sideways when rising straight up is blocked.
 _DRIFT_CHANCE = 0.25
@@ -49,15 +51,16 @@ def update_steam(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
         return None
     grid.set_life(x, y, life)
 
-    # 3. Rise: straight up into EMPTY first; else up-diagonals randomized.
-    if y - 1 >= 0 and grid.get(x, y - 1) == ElementId.EMPTY:
+    # 3. Rise: straight up into EMPTY or a LIQUID (buoyancy -- gas rises, liquid
+    #    sinks); else up-diagonals randomized.
+    if y - 1 >= 0 and is_riseable(grid.get(x, y - 1)):
         swap(grid, x, y, x, y - 1)
         return (x, y - 1)
     diagonals = [(-1, -1), (1, -1)]
     random.shuffle(diagonals)
     for dx, dy in diagonals:
         nx, ny = x + dx, y + dy
-        if grid.in_bounds(nx, ny) and grid.get(nx, ny) == ElementId.EMPTY:
+        if grid.in_bounds(nx, ny) and is_riseable(grid.get(nx, ny)):
             swap(grid, x, y, nx, ny)
             return (nx, ny)
 

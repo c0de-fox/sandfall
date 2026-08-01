@@ -36,7 +36,7 @@ import random
 
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
-from ._common import can_displace, seed_steam_life, swap
+from ._common import can_displace, maybe_convect, seed_steam_life, swap
 
 # Below this temperature a lava cell solidifies into STONE. Well below the
 # spawn-temp (1500) so a freshly painted lava flows before it cools.
@@ -78,6 +78,14 @@ def update_lava(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     if grid.get_temp(x, y) < LAVA_SOLIDIFY_TEMP:
         grid.set(x, y, ElementId.STONE)
         return None
+
+    # Convection: a hot fluid cell rises through the cooler same-phase cell
+    # above it (intra-phase buoyancy). Checked AFTER reactive transitions and
+    # BEFORE gravity flow: a convecting cell swaps up this step instead of
+    # falling/spreading (one move per step).
+    convect = maybe_convect(grid, x, y)
+    if convect is not None:
+        return convect
 
     # 3. Otherwise move like a dense liquid (water-style fall/diagonal/flow).
     #    Straight down.

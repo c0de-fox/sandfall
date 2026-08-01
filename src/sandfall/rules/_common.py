@@ -137,3 +137,70 @@ def swap(grid: Grid, x1: int, y1: int, x2: int, y2: int) -> None:
     cell raises ``IndexError`` rather than failing silently.
     """
     grid.move(x1, y1, x2, y2)
+
+
+# Minimum temperature difference (degrees C) for a convective swap. Prevents
+# jitter: a 1-2C diffusion ripple at a near-equilibrated interface must not flip
+# cells every step. Tunable -- raise if playtesting shows flickering at an
+# equilibrated boundary. Lives at the rule level (mirrors LAVA_SOLIDIFY_TEMP at
+# lava.py:43 and LN2_COLD_TARGET at ln2.py:46); NOT a per-Element field.
+CONVECTION_THRESHOLD = 10.0
+
+
+def maybe_convect(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
+    """Temperature-driven buoyancy: if this cell is hotter than the same-phase
+    cell directly above it (by > :data:`CONVECTION_THRESHOLD`), swap straight up
+    (hot rises; the cooler cell sinks). Returns ``(x, y - 1)`` if it swapped,
+    else ``None``.
+
+    Intra-phase convection ONLY: both cells must be the SAME phase and that
+    phase must be LIQUID or GAS. Cross-phase buoyancy is already handled
+    elsewhere -- :func:`is_riseable` lets a gas rise INTO a liquid
+    (gas/liquid buoyancy), and :func:`can_displace` lets a denser phase sink
+    through a lighter one. This helper is the INTRA-phase complement: hot water
+    rising WITHIN water, hot gas rising WITHIN gas. EMPTY above is explicitly
+    skipped (EMPTY is handled by the existing fall/rise; treating it as
+    convection would double-handle air). Straight-up only (no diagonal
+    convection) so updrafts form clean vertical columns.
+
+    Density guard (liquids only): a denser liquid does NOT buoy up through a
+    lighter one even when hotter -- density stratification dominates in liquids
+    (cold LN2 at density 0.8 floats on warm water at 1.0 regardless of the
+    ~216C temperature difference; hot water under cold oil stays put). The
+    compare is strict (``>``), so same-density pairs (water/water -- the main
+    convection case, lava/lava, ...) still convect. Gases are EXEMPT (their
+    densities are all negligible and close together, so temperature is the
+    dominant buoyancy driver -- e.g. hot FIRE at ~800C rises through cooler
+    SMOKE/STEAM). This preserves correct liquid layering while keeping the
+    gas-gas convection path the plan calls for.
+
+    Called by every liquid/gas rule AFTER its reactive checks (a boiling/
+    freezing/condensing/aging cell transforms in place and returns None before
+    reaching here) and BEFORE its fall/rise/spread/drift. If this returns a
+    destination, the rule returns it (the cell convected; it does not also
+    fall/rise this step -- one move per step).
+    """
+    if y - 1 < 0:
+        return None  # top row -- nothing above
+    above_id = grid.get(x, y - 1)
+    if above_id == ElementId.EMPTY:
+        return None  # EMPTY above is handled by the existing rise/fall
+    my_id = grid.get(x, y)
+    my_phase = ELEMENTS[ElementId(my_id)].phase
+    above_phase = ELEMENTS[ElementId(above_id)].phase
+    # Same-phase LIQUID/LIQUID or GAS/GAS only. Powders (hot sand) and solids
+    # never convect (they pile / are rigid). Different phases use is_riseable /
+    # can_displace instead.
+    if my_phase != above_phase or my_phase not in (Phase.LIQUID, Phase.GAS):
+        return None
+    # Density guard (liquids only): a denser liquid does not buoy up through a
+    # lighter one even when hotter (density stratification dominates in liquids).
+    # Gases are exempt (density differences are negligible; temp dominates).
+    # Strict ``>`` so same-density pairs (water/water) still convect.
+    if my_phase == Phase.LIQUID:
+        if ELEMENTS[ElementId(my_id)].density > ELEMENTS[ElementId(above_id)].density:
+            return None
+    if grid.get_temp(x, y) - grid.get_temp(x, y - 1) > CONVECTION_THRESHOLD:
+        swap(grid, x, y, x, y - 1)
+        return (x, y - 1)
+    return None

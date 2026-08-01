@@ -27,7 +27,7 @@ import random
 
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
-from ._common import is_riseable, swap
+from ._common import is_riseable, maybe_convect, swap
 
 # Per-step chance to drift sideways when rising straight up is blocked.
 _DRIFT_CHANCE = 0.25
@@ -50,6 +50,14 @@ def update_steam(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
         grid.set_life(x, y, 0)
         return None
     grid.set_life(x, y, life)
+
+    # Convection: a hot fluid cell rises through the cooler same-phase cell
+    # above it (intra-phase buoyancy). Checked AFTER reactive transitions and
+    # BEFORE gravity flow: a convecting cell swaps up this step instead of
+    # falling/spreading (one move per step).
+    convect = maybe_convect(grid, x, y)
+    if convect is not None:
+        return convect
 
     # 3. Rise: straight up into EMPTY or a LIQUID (buoyancy -- gas rises, liquid
     #    sinks); else up-diagonals randomized.

@@ -39,7 +39,7 @@ import random
 
 from ..elements import AMBIENT_TEMP, ELEMENTS, ElementId
 from ..grid import Grid
-from ._common import seed_smoke_life, swap
+from ._common import maybe_convect, seed_smoke_life, swap
 
 # Tunables (feel-free-to-nudge knobs documented in the phase-02 reflection).
 SMOKE_CHANCE = 0.05  # per-step chance to emit one smoke puff
@@ -111,6 +111,13 @@ def update_fire(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     #    fire then rises normally.
     if _has_flammable_neighbor(grid, x, y):
         return None
+    # Convection: a hot fluid cell rises through the cooler same-phase cell
+    # above it (intra-phase buoyancy). Checked AFTER reactive transitions and
+    # the cling-to-fuel guard and BEFORE the rise: a convecting cell swaps up
+    # this step instead of rising into EMPTY (one move per step).
+    convect = maybe_convect(grid, x, y)
+    if convect is not None:
+        return convect
     # Rise: straight up into EMPTY first; else up-diagonals randomized.
     if y - 1 >= 0 and grid.get(x, y - 1) == ElementId.EMPTY:
         swap(grid, x, y, x, y - 1)

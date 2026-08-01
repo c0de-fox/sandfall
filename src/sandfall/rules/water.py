@@ -29,7 +29,7 @@ import random
 
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
-from ._common import can_displace, seed_steam_life, swap
+from ._common import can_displace, maybe_convect, seed_steam_life, swap
 
 _WATER = ELEMENTS[ElementId.WATER]
 
@@ -61,6 +61,14 @@ def update_water(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     if t <= _WATER.freeze_point:
         grid.set(x, y, ElementId.ICE)
         return None
+
+    # Convection: a hot fluid cell rises through the cooler same-phase cell
+    # above it (intra-phase buoyancy). Checked AFTER reactive transitions and
+    # BEFORE gravity flow: a convecting cell swaps up this step instead of
+    # falling/spreading (one move per step).
+    convect = maybe_convect(grid, x, y)
+    if convect is not None:
+        return convect
 
     # Straight down.
     if y + 1 < grid.height and can_displace(ElementId.WATER, grid.get(x, y + 1)):

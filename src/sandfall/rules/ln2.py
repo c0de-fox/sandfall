@@ -36,7 +36,7 @@ import random
 
 from ..elements import ElementId
 from ..grid import Grid
-from ._common import can_displace, swap
+from ._common import can_displace, maybe_convect, swap
 
 # The cold temperature an LN2 cell holds (and re-asserts) each step while alive.
 # A cold source: diffusion carries this cold outward. NOT a physical temperature
@@ -60,6 +60,14 @@ def update_ln2(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
     # 2. Re-assert cold while alive (persistent extreme-cold source).
     if grid.get_temp(x, y) > LN2_COLD_TARGET:
         grid.set_temp(x, y, LN2_COLD_TARGET)
+
+    # Convection: a hot fluid cell rises through the cooler same-phase cell
+    # above it (intra-phase buoyancy). Checked AFTER reactive transitions and
+    # BEFORE gravity flow: a convecting cell swaps up this step instead of
+    # falling/spreading (one move per step).
+    convect = maybe_convect(grid, x, y)
+    if convect is not None:
+        return convect
 
     # 3. Flow like a light liquid (water.py / oil.py shape via can_displace + swap).
     if y + 1 < grid.height and can_displace(ElementId.LN2, grid.get(x, y + 1)):

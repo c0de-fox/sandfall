@@ -251,6 +251,23 @@ class UI:
         """Top y pixel of the reserved palette strip."""
         return self._bar_y
 
+    @property
+    def font(self) -> pygame.font.Font:
+        """The lazily-created font used for HUD / tooltip / colorbar text.
+
+        Reused by ``Game._draw_heat_overlays`` for the temperature colorbar
+        degree markers so the H-mode overlay does not duplicate the font.
+        Lazily created on first access (mirrors the init in :meth:`draw`) so it
+        is available even when an overlay renders before ``draw`` runs in a
+        frame. Local pygame import keeps the module import pygame-free for the
+        pure helpers (same pattern as :meth:`draw`).
+        """
+        import pygame  # local: keeps module import pygame-free for the pure helpers
+
+        if self._font is None:
+            self._font = pygame.font.Font(FONT_NAME, FONT_SIZE)
+        return self._font
+
     def in_reserved_area(self, px: int, py: int) -> bool:
         """True if screen pixel ``(px, py)`` is inside the palette strip.
 

@@ -430,6 +430,28 @@ can still select elements while watching heat flow. Like `grid_to_rgb`,
 `thermal_to_rgb` is split out as a pure numpy function so the gradient
 mapping is unit-tested headlessly.
 
+H mode also draws two screen-space UI overlays from `Game._draw_heat_overlays`
+(neither affects the simulation; both render before the magnifier):
+
+- **Temperature colorbar** — a `COLORBAR_W`-px-wide (20) vertical bar pinned
+  to the right edge of the scaled grid, full sim-area height. Its gradient is
+  built by `thermal.build_colorbar_gradient(height)`, which calls
+  `thermal_to_rgb` on a 1-D temp ramp — so the bar is an **exact mirror** of
+  the per-cell coloring (no second gradient definition to drift). Degree
+  markers at `HEAT_VIZ_COLD`, `AMBIENT_TEMP`, 200, and `HEAT_VIZ_HOT` label
+  the bar; the surface is cached and rebuilt only when the sim-area height
+  changes (resize).
+- **Sparse flow arrows** — one semi-transparent white arrow (alpha 128) per
+  `ARROW_STRIDE`-cell (10) block, drawn over the heat colors like wind vectors
+  on a weather map. Each arrow points in its block's dominant flow direction,
+  computed by the pure helper `renderer.flow_arrow_samples(flow, stride)`:
+  it maps every cell's per-step movement code (`Simulation.flow`, a `uint8`
+  direction field recorded during the movement scan) to a unit vector, sums
+  the block, and emits an arrow only where the net flow clears a threshold
+  (still / balanced / mixed blocks cancel to ~zero and are omitted). The
+  arrows make convection currents visible — updrafts/downdrafts in a heated
+  pool read as a field of vertical arrows.
+
 ### Follow-cursor magnifier (`Z`)
 
 `Z` (and the Magnifier palette button) toggle `Game._magnify`. When on and the

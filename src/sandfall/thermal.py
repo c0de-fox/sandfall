@@ -273,3 +273,25 @@ def thermal_to_rgb(temp: npt.NDArray[np.float32]) -> npt.NDArray[np.uint8]:
     )
     np.clip(rgb, 0.0, 255.0, out=rgb)
     return rgb.astype(np.uint8)
+
+
+def build_colorbar_gradient(height: int) -> npt.NDArray[np.uint8]:
+    """Build the vertical colorbar gradient as a ``(height, 3)`` uint8 column.
+
+    Row 0 is the HOT endpoint (``HEAT_VIZ_HOT``) and row ``height-1`` is the
+    COLD endpoint (``HEAT_VIZ_COLD``), matching screen orientation (row 0 is the
+    top). The gradient is produced by calling :func:`thermal_to_rgb` on a 1-D
+    temperature ramp, so the bar is an EXACT mirror of the per-cell heat coloring
+    (no second gradient definition to drift). ``AMBIENT_TEMP`` lands at its
+    natural position in the ramp.
+
+    Pure / pygame-free -> unit-tested headlessly. The renderer transposes it to
+    ``(1, height, 3)`` and scales it to the bar width.
+    """
+    if height < 1:
+        raise ValueError(f"height must be positive ({height=})")
+    temps = np.linspace(
+        float(HEAT_VIZ_HOT), float(HEAT_VIZ_COLD), num=height, dtype=np.float32
+    ).reshape(height, 1)
+    rgb = thermal_to_rgb(temps)  # (height, 1, 3) uint8
+    return rgb.reshape(height, 3)

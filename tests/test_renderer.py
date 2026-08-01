@@ -17,7 +17,8 @@ import pytest
 from sandfall.config import BG_COLOR, GRID_HEIGHT, GRID_WIDTH
 from sandfall.elements import ELEMENTS, ElementId
 from sandfall.grid import Grid
-from sandfall.renderer import Renderer, build_color_lut, grid_to_rgb
+from sandfall.renderer import Renderer, build_color_lut, flow_arrow_samples, grid_to_rgb
+from sandfall.simulation import FLOW_NONE, FLOW_UP
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -185,3 +186,29 @@ def test_renderer_render_self_heals_on_grid_resize() -> None:
     surf = renderer.render(grid)
     assert surf.get_size() == (GRID_WIDTH, GRID_HEIGHT)
     assert tuple(pygame.surfarray.array3d(surf)[0, 0]) == ELEMENTS[ElementId.SAND].color
+
+
+def test_flow_arrow_samples_dominant_direction() -> None:
+    """A block of uniform UP flow yields one up-pointing arrow; a still block
+    yields none.
+
+    flow_arrow_samples is the pure numpy helper that drives the H-mode flow
+    overlay: it reduces each ``stride`` x ``stride`` block to the vector sum of
+    its per-cell unit directions and emits an arrow only when the net flow
+    magnitude clears a threshold (so still / balanced / mixed blocks are
+    omitted -- a half-up/half-down block cancels to ~zero).
+    """
+    # A 10x10 block of uniform upflow (rows/cols 0..9); the rest of the 20x20
+    # grid is still (FLOW_NONE).
+    flow = np.full((20, 20), FLOW_NONE, dtype=np.uint8)
+    flow[0:10, 0:10] = FLOW_UP
+    samples = flow_arrow_samples(flow, stride=10)
+    # Exactly one sample in the upflow block, pointing up (vy < 0, vx == 0).
+    up = [(cx, cy, vx, vy) for (cx, cy, vx, vy) in samples if cx < 10 and cy < 10]
+    assert len(up) == 1
+    _, _, vx, vy = up[0]
+    assert vy < 0 and vx == 0
+    # The all-still blocks (any sample whose center is outside the upflow block)
+    # produced no arrow.
+    still = [(cx, cy) for (cx, cy, _, _) in samples if cx >= 10 or cy >= 10]
+    assert still == []

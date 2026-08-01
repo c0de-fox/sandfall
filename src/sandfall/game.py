@@ -31,6 +31,7 @@ import pygame
 
 from .brush import paint_brush
 from .config import (
+    AMBIENT_TEMP,
     BG_COLOR,
     CELL_SIZE,
     DEFAULT_BRUSH_RADIUS,
@@ -38,6 +39,8 @@ from .config import (
     FPS,
     GRID_HEIGHT,
     GRID_WIDTH,
+    HEAT_VIZ_COLD,
+    HEAT_VIZ_HOT,
     HIGHLIGHT_COLOR,
     INITIAL_WINDOW_H,
     INITIAL_WINDOW_W,
@@ -50,9 +53,21 @@ from .config import (
 from .control import LoopController
 from .elements import ElementId
 from .grid import BrushShape, Grid, migrate_grid
-from .renderer import Renderer
+from .renderer import Renderer, flow_arrow_samples
 from .simulation import Simulation
+from .thermal import build_colorbar_gradient
 from .ui import UI, ToolId, magnifier_src_rect
+
+# H-mode colorbar geometry / colors. The colorbar gradient is pure of
+# temperature (built by thermal.build_colorbar_gradient), so it depends only on
+# the sim-area pixel height; the surface is rebuilt only on a height change.
+COLORBAR_W = 20  # px width of the temperature colorbar
+COLORBAR_BORDER: tuple[int, int, int] = (220, 220, 220)
+COLORBAR_LABEL: tuple[int, int, int] = (235, 235, 235)
+# Sparse flow-arrow overlay (drawn over the heat colors in H mode).
+ARROW_STRIDE = 10  # grid cells per flow-arrow sample block
+ARROW_LEN = 12  # px arrow length on screen
+ARROW_COLOR: tuple[int, int, int, int] = (255, 255, 255, 128)  # semi-transparent white
 
 
 def _parse_frame_cap() -> int | None:
@@ -104,6 +119,12 @@ class Game:
     # still paints the cell at mx // CELL_SIZE at 1x). Bound to Z and the
     # Magnifier palette button; defaults off.
     _magnify: bool
+    # Cached H-mode overlay surfaces (rebuilt only on resize). The colorbar
+    # gradient is pure of temperature, so it depends only on the sim-area pixel
+    # height; the arrow overlay is a screen-sized SRCALPHA cleared each frame.
+    _colorbar_surf: pygame.Surface
+    _colorbar_h: int
+    _arrow_overlay: pygame.Surface
 
     def __init__(self) -> None:
         pygame.init()
@@ -137,6 +158,14 @@ class Game:
         self._window_h = INITIAL_WINDOW_H
         self._heat_overlay = False
         self._magnify = False
+        # H-mode overlay surfaces. The colorbar surface is rebuilt on first draw
+        # (_colorbar_h == -1 forces it); the arrow overlay is a screen-sized
+        # SRCALPHA surface cleared + redrawn each frame in _draw_heat_overlays.
+        self._colorbar_surf = pygame.Surface((COLORBAR_W, 1))
+        self._colorbar_h = -1  # forces a rebuild on first draw
+        self._arrow_overlay = pygame.Surface(
+            (INITIAL_WINDOW_W, INITIAL_WINDOW_H), pygame.SRCALPHA
+        ).convert_alpha()
 
     def run(self) -> int:
         """Run the main loop until QUIT/ESC or the ``SANDFALL_FRAMES`` cap.
@@ -339,6 +368,13 @@ class Game:
         scaled = pygame.transform.scale(small, target)
         self._screen.blit(scaled, (0, 0))
 
+        # H-mode UI overlays (Phase 02): temperature colorbar (right edge) +
+        # sparse flow arrows. Drawn only in heat mode, BEFORE the magnifier --
+        # these are screen-space overlays while the lens crops grid-space, so
+        # the magnifier (if on) magnifies the heat view without the overlays.
+        if self._heat_overlay:
+            self._draw_heat_overlays()
+
         # Follow-cursor magnifier (Phase 03, visual only). Crop the grid-sized
         # ``small`` surface around the cursor cell, scale up ~MAGNIFY_ZOOM, and
         # blit as a floating lens. Painting input mapping is UNCHANGED (mx //
@@ -365,6 +401,77 @@ class Game:
             self.brush_shape,
             magnify_on=self._magnify,
         )
+
+    def _draw_heat_overlays(self) -> None:
+        """Draw the H-mode UI overlays: the temperature colorbar (right edge,
+        with degree markers) and the sparse flow arrows.
+
+        Neither affects the simulation; both are screen-space overlays drawn
+        only when ``self._heat_overlay`` is True (called from :meth:`_draw`,
+        before the magnifier). The colorbar surface is cached and rebuilt only
+        when the sim-area pixel height changes (resize); the arrow overlay is a
+        screen-sized SRCALPHA surface cleared and redrawn each frame.
+
+        Colorbar placement: the rightmost ``COLORBAR_W`` px of the scaled grid
+        region, full sim-area height. Degree markers at the four anchors that
+        bracket the interesting range (``HEAT_VIZ_COLD``, ``AMBIENT_TEMP``,
+        200, ``HEAT_VIZ_HOT``); labels sit just LEFT of the bar so they never
+        run off the right edge.
+        """
+        scaled_h = self._grid.height * CELL_SIZE
+        scaled_w = self._grid.width * CELL_SIZE
+
+        # --- Temperature colorbar (right edge of the scaled grid region) -----
+        if self._colorbar_h != scaled_h:
+            grad = build_colorbar_gradient(scaled_h)  # (scaled_h, 3) uint8
+            bar = pygame.Surface((1, scaled_h))  # 1px-wide column
+            pygame.surfarray.blit_array(bar, grad.reshape(1, scaled_h, 3))
+            self._colorbar_surf = pygame.transform.scale(bar, (COLORBAR_W, scaled_h))
+            self._colorbar_h = scaled_h
+        bx = scaled_w - COLORBAR_W  # right edge of sim area
+        self._screen.blit(self._colorbar_surf, (bx, 0))
+        pygame.draw.rect(
+            self._screen, COLORBAR_BORDER, (bx, 0, COLORBAR_W, scaled_h), 1
+        )
+        # Degree markers at the four anchors that bracket the interesting range.
+        font = self._ui.font
+        span = HEAT_VIZ_HOT - HEAT_VIZ_COLD
+        for temp in (HEAT_VIZ_COLD, AMBIENT_TEMP, 200, HEAT_VIZ_HOT):
+            ty = int(round((HEAT_VIZ_HOT - temp) / span * scaled_h))
+            pygame.draw.line(
+                self._screen, COLORBAR_BORDER, (bx, ty), (bx + COLORBAR_W, ty), 1
+            )
+            label = font.render(f"{temp}", True, COLORBAR_LABEL)
+            # Label sits just LEFT of the bar so it never runs off the right edge.
+            self._screen.blit(
+                label, (bx - label.get_width() - 3, ty - label.get_height() // 2)
+            )
+
+        # --- Sparse flow arrows (one per ARROW_STRIDE-cell block) -----------
+        ov = self._arrow_overlay
+        if ov.get_size() != (self._window_w, self._window_h):
+            ov = pygame.Surface(
+                (self._window_w, self._window_h), pygame.SRCALPHA
+            ).convert_alpha()
+            self._arrow_overlay = ov
+        ov.fill((0, 0, 0, 0))
+        for cx, cy, vx, vy in flow_arrow_samples(self._sim.flow, ARROW_STRIDE):
+            sx = cx * CELL_SIZE + CELL_SIZE // 2
+            sy = cy * CELL_SIZE + CELL_SIZE // 2
+            length = (vx * vx + vy * vy) ** 0.5
+            if length == 0:
+                continue
+            ux, uy = vx / length, vy / length
+            x0 = sx - ux * ARROW_LEN / 2
+            y0 = sy - uy * ARROW_LEN / 2
+            x1 = sx + ux * ARROW_LEN / 2
+            y1 = sy + uy * ARROW_LEN / 2
+            pygame.draw.line(ov, ARROW_COLOR, (x0, y0), (x1, y1), 1)
+            # Small arrowhead at the (x1, y1) tip.
+            hx, hy = x1 - ux * 4 - uy * 2, y1 - uy * 4 + ux * 2
+            hx2, hy2 = x1 - ux * 4 + uy * 2, y1 - uy * 4 - ux * 2
+            pygame.draw.polygon(ov, ARROW_COLOR, [(x1, y1), (hx, hy), (hx2, hy2)])
+        self._screen.blit(ov, (0, 0))
 
     def _draw_magnifier(self, small: pygame.Surface) -> None:
         """Crop + scale a grid region around the cursor into a magnifier lens.

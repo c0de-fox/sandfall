@@ -248,12 +248,13 @@ Defined in `elements.py`:
 - **`ElementId`** — an `IntEnum` of stable integer ids stored in the grid's
   `uint8` array: `EMPTY=0, SAND=1, WATER=2, STONE=3, WOOD=4, FIRE=5,
   SMOKE=6, PLANT=7` (the v1 set, unchanged) plus the Phase-03 temperature
-  additions `STEAM=8, ICE=9, LAVA=10, GLASS=11`. The v1 docstring once said
-  the enum was "defined in full; never add new members"; that was superseded
-  by the temperature feature (user-approved). Existing values 0..7 are
-  unchanged, so every LUT index (renderer color LUT, conductivity LUT) that
-  the v1 code relies on stays stable; new members take 8..11. `uint8` holds
-  up to 255, so there is room for more.
+  additions `STEAM=8, ICE=9, LAVA=10, GLASS=11`, the acid/base reactive-liquid
+  pair `ACID=12, BASE=13`, and the light flammable liquid `OIL=14`. The v1
+  docstring once said the enum was "defined in full; never add new members";
+  that was superseded by the temperature feature (user-approved). Existing
+  values 0..7 are unchanged, so every LUT index (renderer color LUT,
+  conductivity LUT) that the v1 code relies on stays stable; new members take
+  8..14. `uint8` holds up to 255, so there is room for more.
 - **`Phase`** — `IntEnum` describing physical behavior: `SOLID` (static),
   `POWDER` (falls, piles), `LIQUID` (falls, spreads), `GAS` (rises,
   diffuses). Phase drives default behavior and the displacement test.

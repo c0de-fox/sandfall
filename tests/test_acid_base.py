@@ -326,5 +326,8 @@ def test_paint_brush_acid_spawns_at_ambient() -> None:
 
 
 def test_color_lut_has_14_rows() -> None:
-    """build_color_lut sizes from len(ElementId) -> 14 rows after ACID/BASE."""
-    assert build_color_lut().shape == (14, 3)
+    """build_color_lut sizes from len(ElementId). At the end of Phase 01 the
+    enum had 14 members (0..13); Phase 02 (oil) extended it to 15, so the LUT
+    now has 15 rows. The assertion tracks the current enum length rather than
+    a hardcoded count so the next element pass does not need to re-edit it."""
+    assert build_color_lut().shape[0] == len(ElementId)

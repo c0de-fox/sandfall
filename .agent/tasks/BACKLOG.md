@@ -24,10 +24,11 @@
 
 ## Tier 1 — high value, feasible
 
-- **More elements: acid** (dissolves materials), **oil** (flammable liquid,
-  floats on water), **salt** (dissolves in water), **metal** (conducts/melts),
-  **gunpowder** (explosive). The thermal system + the documented "Adding a new
-  element" recipe make each rich and cheap.
+- **More elements:** ~~**acid** (dissolves materials), **oil** (flammable
+  liquid, floats on water)~~ *(done — acid/base pair in Phase 01, oil in
+  Phase 02 of the new-elements plan)*, **salt** (dissolves in water), **metal**
+  (conducts/melts), **gunpowder** (explosive). The thermal system + the
+  documented "Adding a new element" recipe make each rich and cheap.
   `source: sandfall/00` (acid/lava/oil/salt/electricity), `sandfall-temperature/00` (oil/acid/metal phase-change elements).
 - **Save/load + stamps** — persist scenes; copy/paste regions. Pure UX, no sim
   change.

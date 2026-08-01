@@ -25,6 +25,7 @@ from .fire import update_fire
 from .glass import update_glass
 from .ice import update_ice
 from .lava import update_lava
+from .oil import update_oil
 from .plant import update_plant
 from .sand import update_sand
 from .smoke import update_smoke
@@ -65,4 +66,6 @@ RULES: dict[ElementId, UpdateFn] = {
     # New reactive liquids (acid/base pair).
     ElementId.ACID: update_acid,
     ElementId.BASE: update_base,
+    # Oil (light flammable liquid).
+    ElementId.OIL: update_oil,
 }

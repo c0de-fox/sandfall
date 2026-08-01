@@ -68,18 +68,18 @@ SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
 GRID_WIDTH = INITIAL_WINDOW_W // CELL_SIZE  # 800 // 4 == 200  (initial cols)
 GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140  (initial rows)
 
-# Minimum window size. Width must fit the whole palette (16 items: 13 element
+# Minimum window size. Width must fit the whole palette (17 items: 14 element
 # swatches + Eraser + Brush-shape + Magnifier). Width math:
-#   16 * PALETTE_SWATCH + 15 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
-#   = 16*24 + 15*4 + 12 + 2*8 = 384 + 60 + 12 + 16 = 472  (== 118 * CELL_SIZE)
-# 472 is the next clean CELL_SIZE multiple above the needed 472, = 118 cols.
+#   17 * PALETTE_SWATCH + 16 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
+#   = 17*24 + 16*4 + 12 + 2*8 = 408 + 64 + 12 + 16 = 500  (== 125 * CELL_SIZE)
+# 500 is the next clean CELL_SIZE multiple above the needed 500, = 125 cols.
 # Height must fit the 40px palette + a usable sim area (>= 40 cells == 160px)
 # -> 200. The minimum is enforced by the compositor via Window.minimum_size
 # (see Game.__init__); compute_grid_dims additionally floor-clamps the GRID
 # cols/rows to MIN_GRID_* so a tiny window still has a usable grid.
-MIN_WINDOW_W = 472
+MIN_WINDOW_W = 500
 MIN_WINDOW_H = 200
-MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 472 // 4 == 118
+MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 500 // 4 == 125
 MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 40
 
 # --- Loop -------------------------------------------------------------------
@@ -128,6 +128,10 @@ COND_GLASS = 0.10
 # New reactive liquids (acid/base pair).
 COND_ACID = 0.30
 COND_BASE = 0.30
+# Oil (light flammable liquid). Oils are thermal insulators (low conductivity),
+# so a burning oil slick heats its neighbors slowly -> the fire front advances
+# visibly across the surface rather than flashing the whole pool at once.
+COND_OIL = 0.12
 
 # Per-material heat capacity (thermal inertia / thermal mass). Divides the
 # temperature change in diffuse_temps: high cp = changes slowly = thermally
@@ -150,6 +154,10 @@ CP_GLASS = 1.5
 # New reactive liquids (acid/base pair).
 CP_ACID = 2.0
 CP_BASE = 2.0
+# Oil (light flammable liquid). Mid-range thermal mass: heavier than a gas
+# (0.5) but lighter than water (4.0) -- an oil slick heats up at a moderate
+# rate, slow enough for the fire front to advance visibly.
+CP_OIL = 1.5
 
 # --- Heat-overlay display band (Phase 04) -----------------------------------
 # ``thermal.thermal_to_rgb`` maps the temp field's full color span across

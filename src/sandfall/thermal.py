@@ -22,6 +22,7 @@ from .config import (
     COND_GLASS,
     COND_ICE,
     COND_LAVA,
+    COND_OIL,
     COND_PLANT,
     COND_SAND,
     COND_SMOKE,
@@ -36,6 +37,7 @@ from .config import (
     CP_GLASS,
     CP_ICE,
     CP_LAVA,
+    CP_OIL,
     CP_PLANT,
     CP_SAND,
     CP_SMOKE,
@@ -78,6 +80,8 @@ def build_conductivity_lut() -> npt.NDArray[np.float64]:
     # New reactive liquids (rows 12..13).
     lut[int(ElementId.ACID)] = COND_ACID
     lut[int(ElementId.BASE)] = COND_BASE
+    # Oil (row 14).
+    lut[int(ElementId.OIL)] = COND_OIL
     return lut
 
 
@@ -106,6 +110,8 @@ def build_heat_capacity_lut() -> npt.NDArray[np.float64]:
     # New reactive liquids (rows 12..13).
     lut[int(ElementId.ACID)] = CP_ACID
     lut[int(ElementId.BASE)] = CP_BASE
+    # Oil (row 14).
+    lut[int(ElementId.OIL)] = CP_OIL
     return lut
 
 

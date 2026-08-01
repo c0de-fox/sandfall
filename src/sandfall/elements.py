@@ -36,6 +36,11 @@ class ElementId(IntEnum):
     other into water, dilute in water, and burn to FIRE when heated. Same
     supported-operation status as the 8..11 members; existing values 0..11
     are unchanged so every LUT index stays stable.
+
+    Extended once more with oil (OIL=14) — a light flammable liquid (density
+    0.8, less than WATER 1.0 -> floats on water) that ignites to FIRE when
+    heated above a low flashpoint. Same shape as the previous extensions;
+    existing values 0..13 are unchanged so every LUT index stays stable.
     """
 
     EMPTY = 0
@@ -53,6 +58,8 @@ class ElementId(IntEnum):
     # --- New elements (acid/base pair) ---
     ACID = 12
     BASE = 13
+    # --- New element (oil) ---
+    OIL = 14
 
 
 class Phase(IntEnum):
@@ -272,5 +279,23 @@ ELEMENTS: dict[ElementId, Element] = {
         heat_capacity=2.0,
         flashpoint=200,
         burn_temp=600,
+    ),
+    # --- Oil (light flammable liquid; floats on water) ----------------------
+    # LIQUID with density 0.8 (< WATER 1.0 -> floats on water via can_displace).
+    # Low flashpoint ~150 -> ignites to FIRE when heated by fire/lava (thermal
+    # path). No dissolve/dilute of its own (rules/oil.py: burn first, then flow).
+    # burn_temp is left at its default (AMBIENT_TEMP): when oil ignites it
+    # becomes ElementId.FIRE, whose rule re-asserts _FIRE.burn_temp (800) --
+    # the same shape as wood/plant where the active heat comes from FIRE, not
+    # the fuel's own declared burn_temp (overview Risk #6).
+    ElementId.OIL: Element(
+        id=ElementId.OIL,
+        name="oil",
+        color=(70, 45, 25),  # dark oily brown
+        density=0.8,
+        phase=Phase.LIQUID,
+        conductivity=0.12,  # oils are thermal insulators
+        heat_capacity=1.5,
+        flashpoint=150,
     ),
 }

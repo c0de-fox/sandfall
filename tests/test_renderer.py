@@ -61,19 +61,19 @@ def test_build_color_lut_matches_registered_colors() -> None:
 
 
 def test_build_color_lut_grew_with_new_elements() -> None:
-    """Phase 03 grew ElementId 8 -> 12; the acid/base pair grows it 12 -> 14.
-    The LUT must auto-resize (it sizes from ``len(ElementId)``) and rows 8..13
-    must carry the new element colors at the correct stable indices. No
-    ``renderer.py`` edit was needed for this — the LUT builder iterates
-    ``ELEMENTS`` and sizes from the enum.
+    """Phase 03 grew ElementId 8 -> 12; the acid/base pair grew it 12 -> 14;
+    oil grows it 14 -> 15. The LUT must auto-resize (it sizes from
+    ``len(ElementId)``) and rows 8..14 must carry the new element colors at the
+    correct stable indices. No ``renderer.py`` edit was needed for this — the
+    LUT builder iterates ``ELEMENTS`` and sizes from the enum.
     """
     lut = build_color_lut()
 
-    # The enum has exactly 14 members (v1 values 0..7 unchanged + 8..13 new).
-    assert len(ElementId) == 14
-    assert [e.value for e in ElementId] == list(range(14))
+    # The enum has exactly 15 members (v1 values 0..7 unchanged + 8..14 new).
+    assert len(ElementId) == 15
+    assert [e.value for e in ElementId] == list(range(15))
     # LUT shape tracks the enum width.
-    assert lut.shape == (14, 3)
+    assert lut.shape == (15, 3)
     # The Phase-03 elements land at indices 8..11.
     phase03_elements = [ElementId.STEAM, ElementId.ICE, ElementId.LAVA, ElementId.GLASS]
     assert [int(e) for e in phase03_elements] == [8, 9, 10, 11]
@@ -84,6 +84,9 @@ def test_build_color_lut_grew_with_new_elements() -> None:
     assert [int(e) for e in acid_base] == [12, 13]
     for eid in acid_base:
         assert tuple(lut[int(eid)]) == ELEMENTS[eid].color
+    # Oil lands at index 14 and carries its registered color.
+    assert int(ElementId.OIL) == 14
+    assert tuple(lut[int(ElementId.OIL)]) == ELEMENTS[ElementId.OIL].color
 
 
 def test_grid_to_rgb_shape() -> None:

@@ -68,18 +68,18 @@ SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
 GRID_WIDTH = INITIAL_WINDOW_W // CELL_SIZE  # 800 // 4 == 200  (initial cols)
 GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140  (initial rows)
 
-# Minimum window size. Width must fit the whole palette (17 items: 14 element
+# Minimum window size. Width must fit the whole palette (18 items: 15 element
 # swatches + Eraser + Brush-shape + Magnifier). Width math:
-#   17 * PALETTE_SWATCH + 16 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
-#   = 17*24 + 16*4 + 12 + 2*8 = 408 + 64 + 12 + 16 = 500  (== 125 * CELL_SIZE)
-# 500 is the next clean CELL_SIZE multiple above the needed 500, = 125 cols.
+#   18 * PALETTE_SWATCH + 17 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
+#   = 18*24 + 17*4 + 12 + 2*8 = 432 + 68 + 12 + 16 = 528  (== 132 * CELL_SIZE)
+# 528 is the next clean CELL_SIZE multiple above the needed 528, = 132 cols.
 # Height must fit the 40px palette + a usable sim area (>= 40 cells == 160px)
 # -> 200. The minimum is enforced by the compositor via Window.minimum_size
 # (see Game.__init__); compute_grid_dims additionally floor-clamps the GRID
 # cols/rows to MIN_GRID_* so a tiny window still has a usable grid.
-MIN_WINDOW_W = 500
+MIN_WINDOW_W = 528
 MIN_WINDOW_H = 200
-MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 500 // 4 == 125
+MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 528 // 4 == 132
 MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 40
 
 # --- Loop -------------------------------------------------------------------
@@ -132,6 +132,8 @@ COND_BASE = 0.30
 # so a burning oil slick heats its neighbors slowly -> the fire front advances
 # visibly across the surface rather than flashing the whole pool at once.
 COND_OIL = 0.12
+# Gunpowder (explosive powder). A powder like sand: low conductivity.
+COND_GUNPOWDER = 0.15
 
 # Per-material heat capacity (thermal inertia / thermal mass). Divides the
 # temperature change in diffuse_temps: high cp = changes slowly = thermally
@@ -158,6 +160,8 @@ CP_BASE = 2.0
 # (0.5) but lighter than water (4.0) -- an oil slick heats up at a moderate
 # rate, slow enough for the fire front to advance visibly.
 CP_OIL = 1.5
+# Gunpowder (explosive powder). Same thermal mass as sand (1.5).
+CP_GUNPOWDER = 1.5
 
 # --- Heat-overlay display band (Phase 04) -----------------------------------
 # ``thermal.thermal_to_rgb`` maps the temp field's full color span across

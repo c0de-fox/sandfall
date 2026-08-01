@@ -20,6 +20,7 @@ from .config import (
     COND_EMPTY,
     COND_FIRE,
     COND_GLASS,
+    COND_GUNPOWDER,
     COND_ICE,
     COND_LAVA,
     COND_OIL,
@@ -35,6 +36,7 @@ from .config import (
     CP_EMPTY,
     CP_FIRE,
     CP_GLASS,
+    CP_GUNPOWDER,
     CP_ICE,
     CP_LAVA,
     CP_OIL,
@@ -82,6 +84,8 @@ def build_conductivity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.BASE)] = COND_BASE
     # Oil (row 14).
     lut[int(ElementId.OIL)] = COND_OIL
+    # Gunpowder (row 15).
+    lut[int(ElementId.GUNPOWDER)] = COND_GUNPOWDER
     return lut
 
 
@@ -112,6 +116,8 @@ def build_heat_capacity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.BASE)] = CP_BASE
     # Oil (row 14).
     lut[int(ElementId.OIL)] = CP_OIL
+    # Gunpowder (row 15).
+    lut[int(ElementId.GUNPOWDER)] = CP_GUNPOWDER
     return lut
 
 

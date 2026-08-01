@@ -23,6 +23,7 @@ from .acid import update_acid
 from .base import update_base
 from .fire import update_fire
 from .glass import update_glass
+from .gunpowder import update_gunpowder
 from .ice import update_ice
 from .lava import update_lava
 from .oil import update_oil
@@ -68,4 +69,6 @@ RULES: dict[ElementId, UpdateFn] = {
     ElementId.BASE: update_base,
     # Oil (light flammable liquid).
     ElementId.OIL: update_oil,
+    # Gunpowder (explosive powder).
+    ElementId.GUNPOWDER: update_gunpowder,
 }

@@ -41,6 +41,13 @@ class ElementId(IntEnum):
     0.8, less than WATER 1.0 -> floats on water) that ignites to FIRE when
     heated above a low flashpoint. Same shape as the previous extensions;
     existing values 0..13 are unchanged so every LUT index stays stable.
+
+    Extended again with gunpowder (GUNPOWDER=15) — a dark POWDER (density
+    ~1.5, like sand) that DETONATES (heat burst + crater + scatter via the
+    reusable ``rules/blast.py::explode``) when its own temp exceeds a low
+    flashpoint (~200). Fire, lava, or another explosion's heat burst all set
+    it off -> chain reactions for free. Same shape as the prior extensions;
+    existing values 0..14 are unchanged so every LUT index stays stable.
     """
 
     EMPTY = 0
@@ -60,6 +67,8 @@ class ElementId(IntEnum):
     BASE = 13
     # --- New element (oil) ---
     OIL = 14
+    # --- New element (gunpowder) ---
+    GUNPOWDER = 15
 
 
 class Phase(IntEnum):
@@ -297,5 +306,24 @@ ELEMENTS: dict[ElementId, Element] = {
         conductivity=0.12,  # oils are thermal insulators
         heat_capacity=1.5,
         flashpoint=150,
+    ),
+    # --- Gunpowder (explosive powder; detonates when heated) -----------------
+    # POWDER with density 1.5 (like SAND -> piles and falls like sand when not
+    # ignited). flashpoint ~200 -> DETONATES (heat burst + crater + scatter via
+    # rules/blast.py) when its own temp exceeds the flashpoint. Fire, lava, or
+    # ANOTHER explosion's heat burst sets it off -> chain reactions. burn_temp is
+    # left at its default (AMBIENT_TEMP): on detonation the cell becomes
+    # ElementId.FIRE, whose rule re-asserts _FIRE.burn_temp (800) -- the same
+    # shape as wood/plant/oil where the active heat comes from FIRE, not the
+    # fuel's own declared burn_temp (overview Risk #6 / Decision #3).
+    ElementId.GUNPOWDER: Element(
+        id=ElementId.GUNPOWDER,
+        name="gunpowder",
+        color=(60, 60, 68),  # dark gray/black (distinct from SMOKE 90 & STONE 120)
+        density=1.5,
+        phase=Phase.POWDER,
+        conductivity=0.15,  # a powder, like sand
+        heat_capacity=1.5,
+        flashpoint=200,
     ),
 }

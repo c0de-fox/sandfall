@@ -249,12 +249,13 @@ Defined in `elements.py`:
   `uint8` array: `EMPTY=0, SAND=1, WATER=2, STONE=3, WOOD=4, FIRE=5,
   SMOKE=6, PLANT=7` (the v1 set, unchanged) plus the Phase-03 temperature
   additions `STEAM=8, ICE=9, LAVA=10, GLASS=11`, the acid/base reactive-liquid
-  pair `ACID=12, BASE=13`, and the light flammable liquid `OIL=14`. The v1
-  docstring once said the enum was "defined in full; never add new members";
-  that was superseded by the temperature feature (user-approved). Existing
-  values 0..7 are unchanged, so every LUT index (renderer color LUT,
-  conductivity LUT) that the v1 code relies on stays stable; new members take
-  8..14. `uint8` holds up to 255, so there is room for more.
+  pair `ACID=12, BASE=13`, the light flammable liquid `OIL=14`, and the
+  explosive powder `GUNPOWDER=15`. The v1 docstring once said the enum was
+  "defined in full; never add new members"; that was superseded by the
+  temperature feature (user-approved). Existing values 0..7 are unchanged, so
+  every LUT index (renderer color LUT, conductivity LUT) that the v1 code
+  relies on stays stable; new members take 8..15. `uint8` holds up to 255, so
+  there is room for more.
 - **`Phase`** — `IntEnum` describing physical behavior: `SOLID` (static),
   `POWDER` (falls, piles), `LIQUID` (falls, spreads), `GAS` (rises,
   diffuses). Phase drives default behavior and the displacement test.
@@ -535,7 +536,14 @@ Adding an element is a small, well-defined change touching five places:
    rule contract above. Use `_common.swap` for every move and
    `_common.can_displace` for displacement tests; set `life` explicitly for
    any finite-duration element and expose a `seed_<name>_life` helper if the
-   brush should be able to paint it.
+   brush should be able to paint it. An **explosive** element's detonation is
+   a radius side-effect write: its rule calls the reusable
+   `rules/blast.py::explode(grid, x, y, ...)` (heat burst + crater + scatter
+   over a circular radius), then overwrites its own cell (e.g. → FIRE) and
+   returns `None` — the same "transform own cell in place, return None"
+   reactive shape as wood/lava, just spread over a radius via direct
+   `grid.set`/`set_temp` writes (mirrors how `lava.py`'s neighbor reaction is
+   already a side-effect write).
 4. **`rules/__init__.py`** — import the function and add it to the `RULES`
    dict. (Static solids get an explicit no-op rule.)
 5. **Tests** — add a `tests/test_<name>.py` covering the rule's behavior

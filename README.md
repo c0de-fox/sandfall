@@ -4,7 +4,7 @@ A falling-sand sandbox game built with [pygame-ce] and numpy. Paint elements
 onto a grid and watch them fall, flow, burn, and grow — in the spirit of
 *sand:box*, *The Powder Toy*, and *Sandustry*.
 
-This is a complete **v1**: fifteen interacting elements with a per-cell
+This is a complete **v1**: sixteen interacting elements with a per-cell
 **temperature field**, mouse painting, a UI palette, and a single
 self-contained Linux binary build.
 
@@ -12,7 +12,7 @@ self-contained Linux binary build.
 
 ## Features
 
-Fifteen elements, each with its own physics and interactions, all sharing a
+Sixteen elements, each with its own physics and interactions, all sharing a
 per-cell **temperature field**: heat diffuses through the grid every frame,
 fuels ignite when their own temperature exceeds their flashpoint, and
 materials boil / freeze / melt / condense across phase boundaries.
@@ -33,6 +33,7 @@ materials boil / freeze / melt / condense across phase boundaries.
 | **Acid** | Dense reactive liquid (denser than water → sinks through it). Dissolves adjacent materials (consumed-on-dissolve); resists only glass (so glass containers hold it). Neutralizes base into water on contact, dilutes in water, and ignites to fire when heated above its flashpoint. |
 | **Base** | Dense reactive liquid, the deliberate mirror of acid (resists stone instead of glass). Dissolves adjacent materials, neutralizes acid into water, dilutes, and ignites to fire when heated. |
 | **Oil** | Light flammable liquid (less dense than water → floats on top). No dissolve/dilute of its own; ignites to fire when heated above its low flashpoint. Drop fire or lava on an oil slick floating on water and the flame races across the surface. |
+| **Gunpowder** | Explosive powder (dense like sand → piles and falls). Detonates when its own temperature exceeds a low flashpoint: a heat burst + crater + scatter blast that destroys everything in the inner radius, scatters loose materials outward, and heats the surroundings — enough to ignite wood, boil water, and chain-detonate any other gunpowder in reach. Drop fire or lava on a pile and watch the whole chain go up. |
 
 The simulation runs at a fixed 60 FPS over a 200 x 140 grid — an 800 x 560
 playfield (an 800 x 600 window with a 40px palette bar at the bottom and

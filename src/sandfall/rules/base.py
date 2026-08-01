@@ -9,21 +9,26 @@ acid. Each step, in fixed precedence:
 1. **Burn** -- if the cell's own temp exceeds its flashpoint, become FIRE (seed
    life, set burn-temp). Mirrors wood/plant reactive ignition.
 2. **Neutralize** -- if any orthogonal neighbor is ACID, BOTH this cell and
-   that neighbor become WATER (a side-effect write on the neighbor). Idempotent:
-   setting WATER on already-WATER is harmless, so the randomized scan order
-   does not matter (the acid rule performs the identical write, so whichever
-   rule scans first leaves both cells WATER).
-3. **Dilute** -- if any orthogonal neighbor is WATER, with per-step chance
-   DILUTE_CHANCE become WATER itself. If it does NOT dilute, fall through to
-   dissolve/flow (so base still sinks through water).
-4. **Dissolve** -- with per-step chance DISSOLVE_CHANCE, eat ONE adjacent
+   that neighbor become hot STEAM (`NEUTRALIZE_TEMP`, seeded life). The STEAM
+   then condenses to WATER via the steam rule (temp < condense_point -> WATER),
+   so the end state is still water but via a hot, gaseous intermediate
+   (exothermic). Idempotent: the acid rule performs the identical STEAM write,
+   so whichever scans first wins.
+3. **Dissolve** -- with per-step chance DISSOLVE_CHANCE, eat ONE adjacent
    dissolvable neighbor: the target becomes EMPTY (or, with chance
    DISSOLVE_SMOKE_CHANCE, SMOKE seeded via seed_smoke_life for visual feedback),
    and the base cell itself becomes EMPTY (consumed). Base dissolves everything
    EXCEPT the BASE_RESIST set (stone resists base).
-5. **Flow** -- otherwise move like a dense liquid (water.py shape: straight
+4. **Flow** -- otherwise move like a dense liquid (water.py shape: straight
    down, down-diagonals randomized, one-cell sideways randomized) via
    can_displace + swap.
+
+There is intentionally NO dilute step (mirrors acid.py). Base + WATER simply
+coexist (base is denser, 1.2 > 1.0, so it sinks through water via the Flow
+step). A prior `dilute` rule was autocatalytic: one water cell -- e.g.
+condensed from neutralization steam -- dissolved the whole base pool,
+defeating ~1:1 neutralization. Removing it entirely is what guarantees a
+single acid cannot clear a whole base pool.
 
 Because dissolve consumes the base cell (id-changed) every time it fires, the
 dormant-cell wake condition (id_changed | moved, dilated) keeps the front
@@ -36,12 +41,18 @@ import random
 
 from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
-from ._common import can_displace, seed_fire_life, seed_smoke_life, swap
+from ._common import (
+    can_displace,
+    seed_fire_life,
+    seed_smoke_life,
+    seed_steam_life,
+    swap,
+)
 
 # Tunables (first-pass values; pin final tuned values in the reflection).
 DISSOLVE_CHANCE = 0.5  # per-step chance to eat one dissolvable neighbor
-DILUTE_CHANCE = 0.08  # per-step chance to dilute into adjacent water
 DISSOLVE_SMOKE_CHANCE = 0.10  # chance a dissolved target emits SMOKE (else EMPTY)
+NEUTRALIZE_TEMP = 150  # temp (°C) the acid+base -> STEAM reaction heats both cells to
 
 # Base does NOT dissolve these (stone resists base; the rest are the special
 # non-dissolve cases, identical to acid's). A neighbor is dissolvable iff
@@ -70,8 +81,8 @@ _NEIGHBORS_4: tuple[tuple[int, int], ...] = ((0, -1), (0, 1), (-1, 0), (1, 0))
 
 
 def update_base(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
-    """Step a base cell: burn, else neutralize, else dilute, else dissolve,
-    else flow like a dense liquid."""
+    """Step a base cell: burn, else neutralize, else dissolve, else flow like
+    a dense liquid."""
     # 1. Burn: own temp above flashpoint -> FIRE.
     if _ELM.flashpoint > 0 and grid.get_temp(x, y) > _ELM.flashpoint:
         grid.set(x, y, ElementId.FIRE)
@@ -86,21 +97,19 @@ def update_base(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
             continue
         nb = grid.get(nx, ny)
 
-        # 2. Neutralize: base adjacent to ACID -> BOTH become WATER (side-effect
-        #    write on the neighbor, idempotent across scan orders).
+        # 2. Neutralize: base adjacent to ACID -> BOTH become hot STEAM (see
+        #    acid.py for the full rationale). Mirrors the acid rule's identical
+        #    STEAM write, so the scan order does not matter (idempotent).
         if nb == ElementId.ACID:
-            grid.set(x, y, ElementId.WATER)
-            grid.set(nx, ny, ElementId.WATER)
+            grid.set(x, y, ElementId.STEAM)
+            grid.set(nx, ny, ElementId.STEAM)
+            grid.set_life(x, y, seed_steam_life())
+            grid.set_life(nx, ny, seed_steam_life())
+            grid.set_temp(x, y, NEUTRALIZE_TEMP)
+            grid.set_temp(nx, ny, NEUTRALIZE_TEMP)
             return None
 
-        # 3. Dilute: base adjacent to WATER -> probabilistically become WATER.
-        #    (If it does not dilute, keep scanning; the dissolve/flow steps
-        #    still run so it sinks through water.)
-        if nb == ElementId.WATER and random.random() < DILUTE_CHANCE:
-            grid.set(x, y, ElementId.WATER)
-            return None
-
-    # 4. Dissolve: with DISSOLVE_CHANCE, eat ONE dissolvable neighbor (consumed).
+    # 3. Dissolve: with DISSOLVE_CHANCE, eat ONE dissolvable neighbor (consumed).
     if random.random() < DISSOLVE_CHANCE:
         targets = [
             (x + dx, y + dy)
@@ -119,7 +128,7 @@ def update_base(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
             grid.set(x, y, ElementId.EMPTY)
             return None
 
-    # 5. Flow like a dense liquid (water.py shape via can_displace + swap).
+    # 4. Flow like a dense liquid (water.py shape via can_displace + swap).
     if y + 1 < grid.height and can_displace(ElementId.BASE, grid.get(x, y + 1)):
         swap(grid, x, y, x, y + 1)
         return (x, y + 1)

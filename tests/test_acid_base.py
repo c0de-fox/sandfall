@@ -1,22 +1,27 @@
-"""Phase 01 (acid + base pair) tests: dissolve / neutralize / dilute / burn.
+"""Phase 01 (acid + base pair) tests: dissolve / neutralize / burn.
 
-Covers the 5-step precedence of the two new reactive liquids deterministically.
+Covers the 4-step precedence of the two new reactive liquids deterministically
+(the prior `dilute` step was removed -- it was autocatalytic and let one water
+cell clear a whole acid pool; see test_acid_does_not_dilute_into_water).
 Two strategies (mirrors tests/test_phase.py):
 
 * **Single-cell transitions** (burn) use a ``Grid(1, 1)``: on a 1x1 grid the
   diffusion pre-pass is a true no-op (edge-padding replicates the lone cell on
   all four sides -> zero Laplacian), so the rule reads EXACTLY the temperature
   the test set.
-* **Two-cell reactions** (dissolve / neutralize / dilute / smoke) use a
+* **Two-cell reactions** (dissolve / neutralize / smoke) use a
   ``Grid(2, 1)`` so the two cells are orthogonally adjacent. Both cells are
   set BEFORE constructing ``Simulation`` so the ``__init__`` bootstrap
   (``simulation.py``: seed active from all non-empty) marks both active.
 
 Probabilistic behaviors are pinned deterministic by monkeypatching the module
-globals (``DISSOLVE_CHANCE`` / ``DILUTE_CHANCE`` / ``DISSOLVE_SMOKE_CHANCE``),
-which are read at call time (like ``fire.py``'s ``SMOKE_CHANCE``). The
-neutralize test additionally loops ``random.seed`` over 20 seeds to verify the
-idempotent side-effect write is scan-order-safe.
+globals (``DISSOLVE_CHANCE`` / ``DISSOLVE_SMOKE_CHANCE``), which are read at
+call time (like ``fire.py``'s ``SMOKE_CHANCE``). The neutralize test
+additionally loops ``random.seed`` over 20 seeds to verify the idempotent STEAM
+side-effect write is scan-order-safe. A 1:1 pool-persists regression (one base
+in a ~20-cell acid pool) proves the dilute cascade is broken, and a
+neutralized-steam-condenses-to-water test exercises the existing steam rule on
+the reaction product.
 """
 
 from __future__ import annotations
@@ -161,36 +166,120 @@ def test_base_does_not_dissolve_stone(monkeypatch: object) -> None:
 # --- neutralize (deterministic across scan orders) -------------------------
 
 
-def test_acid_base_neutralize_both_become_water() -> None:
-    """Acid adjacent to BASE -> BOTH become WATER, for any seed / scan order.
+def test_acid_base_neutralize_both_become_steam() -> None:
+    """Acid adjacent to BASE -> BOTH become STEAM (hot, finite life), for any
+    seed / scan order. The idempotent side-effect write (both rules set BOTH
+    cells to STEAM at NEUTRALIZE_TEMP) is what makes the randomized scan order
+    irrelevant. The STEAM later condenses to WATER via the steam rule (see
+    test_neutralized_steam_condenses_to_water). Verified across 20 seeds."""
+    import sandfall.rules.acid as acid
 
-    The idempotent side-effect write (both rules set BOTH cells to WATER) is
-    what makes the randomized scan order irrelevant. Verified across 20 seeds
-    (mirrors tests/test_phase.py's lava+water reaction test).
-    """
     for i in range(20):
         random.seed(i)
         g = Grid(2, 1)
         g.set(0, 0, ElementId.ACID)
         g.set(1, 0, ElementId.BASE)
         Simulation(g).step()
-        assert g.get(0, 0) == ElementId.WATER, f"seed={i}"
-        assert g.get(1, 0) == ElementId.WATER, f"seed={i}"
+        assert g.get(0, 0) == ElementId.STEAM, f"seed={i}"
+        assert g.get(1, 0) == ElementId.STEAM, f"seed={i}"
+        # Reaction is exothermic: both cells heated to NEUTRALIZE_TEMP.
+        assert g.get_temp(0, 0) == acid.NEUTRALIZE_TEMP, f"seed={i}"
+        assert g.get_temp(1, 0) == acid.NEUTRALIZE_TEMP, f"seed={i}"
+        # Steam has a finite life (seeded, not the stale acid life of 0).
+        assert g.get_life(0, 0) > 0, f"seed={i}"
+        assert g.get_life(1, 0) > 0, f"seed={i}"
+
+
+def test_one_base_does_not_clear_whole_acid_pool() -> None:
+    """HEADLINE REGRESSION: dropping ONE base into a ~19-cell acid pool must NOT
+    clear the pool.
+
+    Pre-fix: neutralization produced WATER, and the acid `dilute` rule (acid
+    adjacent to WATER -> become WATER) was autocatalytic -- the product water
+    diluted more acid into MORE water, collapsing the WHOLE pool from a single
+    base (measured: acid 19 -> 0 within ~60 steps). Even after neutralization
+    was changed to STEAM, the steam condensed back to WATER next to the pool and
+    re-ignited the same cascade (measured again: acid 20 -> 0).
+
+    Post-fix (acid.py + base.py):
+      1. Neutralization -> hot STEAM (not WATER).
+      2. The `dilute` step is removed entirely. Acid + WATER coexist with no
+         reaction (acid is denser and sinks through water). With NO dilution
+         there is NO cascade -- the single water cell left by condensed
+         neutralization steam simply rises out of the pool (it is lighter) and
+         the pool is left intact.
+
+    Net: one base neutralizes ~one acid cell; the pool persists (~1:1).
+
+    The grid top is left EMPTY so steam/water can escape upward. (In a sealed
+    box the steam would condense in place near the acid, but with no dilute rule
+    even that cannot propagate -- at worst a 1-2-cell local effect.)"""
+    random.seed(0)
+    g = Grid(10, 12)
+    # A ~20-cell acid pool across rows 6-9, cols 1-5 (open top above it).
+    for y in range(6, 10):
+        for x in range(1, 6):
+            g.set(x, y, ElementId.ACID)
+    acid_before = int((g.array == int(ElementId.ACID)).sum())
+    assert acid_before == 20
+    # Drop ONE base cell just above the pool's surface.
+    g.set(3, 5, ElementId.BASE)
+    sim = Simulation(g)
+    for _ in range(100):
+        sim.step()
+    acid_after = int((g.array == int(ElementId.ACID)).sum())
+    # Pool persists: nearly all ~20 cells remain. Measured post-fix: 19 of 20
+    # (only the one acid cell that touched the base neutralizes), stable across
+    # seeds -- tightened from the plan's loose >= 10 floor accordingly.
+    # Pre-fix this was ~0 (the whole pool collapsed to water).
+    assert acid_after >= 15, (acid_before, acid_after)
+
+
+def test_neutralized_steam_condenses_to_water() -> None:
+    """The STEAM produced by acid+base neutralization eventually condenses to
+    WATER via the existing steam rule (temp < condense_point -> WATER). No new
+    code: this just exercises the steam rule on the reaction product.
+
+    A STONE cap above the reaction traps the steam so it cools IN PLACE (rather
+    than rising out of the grid and expiring to EMPTY), guaranteeing the
+    condensation happens in a known place we can assert on."""
+    random.seed(0)
+    g = Grid(3, 6)
+    # STONE cap one row above the reaction so steam cannot escape upward.
+    g.set(0, 1, ElementId.STONE)
+    g.set(1, 1, ElementId.STONE)
+    g.set(2, 1, ElementId.STONE)
+    # The reaction pair at the bottom row.
+    g.set(1, 2, ElementId.ACID)
+    g.set(2, 2, ElementId.BASE)
+    sim = Simulation(g)
+    for _ in range(400):  # empirical: let 150C steam cool below 60 -> condense
+        sim.step()
+    water = int((g.array == int(ElementId.WATER)).sum())
+    assert water >= 1  # at least one neutralized cell condensed back to water
 
 
 # --- dilute (monkeypatch DILUTE_CHANCE=1.0) --------------------------------
 
 
-def test_acid_dilutes_into_water(monkeypatch: object) -> None:
-    """Acid adjacent to WATER dilutes to WATER at DILUTE_CHANCE==1.0."""
-    import sandfall.rules.acid as acid
+def test_acid_does_not_dilute_into_water() -> None:
+    """Acid adjacent to WATER does NOT dilute -- they coexist (neither is
+    consumed). Acid is denser, so it displaces the water via the flow step's
+    density swap (they may exchange positions), but no ACID is lost.
 
-    monkeypatch.setattr(acid, "DILUTE_CHANCE", 1.0)
+    There is no dilute step at all: a prior `dilute` rule was autocatalytic
+    (acid adjacent to WATER -> become WATER/EMPTY spawned a cascade that let one
+    water cell clear a whole acid pool), so it was removed entirely to guarantee
+    ~1:1 neutralization. This test pins that removal: a single acid cell next to
+    water survives (count is unchanged) even though it may swap places."""
     g = Grid(2, 1)
     g.set(0, 0, ElementId.ACID)
     g.set(1, 0, ElementId.WATER)
     Simulation(g).step()
-    assert g.get(0, 0) == ElementId.WATER
+    acid_after = int((g.array == int(ElementId.ACID)).sum())
+    water_after = int((g.array == int(ElementId.WATER)).sum())
+    assert acid_after == 1  # no dilution -- acid survives (may have swapped pos)
+    assert water_after == 1  # water unchanged
 
 
 # --- burn (flashpoint -> FIRE; single cell, diffusion no-op on 1x1) --------

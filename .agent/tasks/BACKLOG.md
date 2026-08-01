@@ -69,6 +69,22 @@
   made so ice can freeze water until real cold sources exist). Landing this
   rework also retires the "ice no longer melts in ambient" behavior change.
   `source: thermal-float-ice/00` Out-of-Scope + Decision Log #3 (this round's interim persistent-cold-source ice; realistic rework is the user-stated future direction).
+- **Concentration / mixing system for acid-base (Scope B chemistry layer).** A
+  per-cell **concentration** field for ACID/BASE (0.0–1.0) that **diffuses/mixes
+  like heat** (reuses the diffusion machinery), so "diluted acid" is a real,
+  visible state instead of being indistinguishable from water. Built on that:
+  **dissolution scaled by concentration** (weak/dilute acid dissolves slowly or
+  not at all below a threshold — fixes "dilute acid dissolves nothing / looks
+  like water"); **stoichiometric neutralization** (acid+base consume
+  concentration ~1:1, exothermic proportional to the amount reacted, rather
+  than consuming whole cells); and a **mixing heatmap** (`M` key, mirroring `H`)
+  showing acid=red / base=blue intensity by concentration. This is the proper
+  fix for the two user notes deferred from the acid/base neutralization fix; it
+  is a thermal-scale chemistry layer (~3 phases: concentration field + diffusion,
+  dissolution/neutralization rework, heatmap + UI). The interim **Scope A
+  steam-fix** (acid+base → hot STEAM, breaking the dilute cascade to ~1:1)
+  shipped first as a cheap behavior fix; this is the deliberate follow-on.
+  `source: acid-base-neutralization/00` Out-of-Scope + Decision Log #2 (Scope A quick steam-fix approved; Scope B concentration system deferred here).
 
 ## Tier 3 — polish
 

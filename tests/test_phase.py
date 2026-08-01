@@ -28,7 +28,6 @@ from sandfall.brush import paint_brush
 from sandfall.elements import ELEMENTS, ElementId
 from sandfall.grid import Grid
 from sandfall.rules import seed_steam_life
-from sandfall.rules.ice import ICE_COLD_TARGET
 from sandfall.rules.lava import LAVA_SOLIDIFY_TEMP
 from sandfall.simulation import Simulation
 
@@ -71,49 +70,57 @@ def test_water_freezes_to_ice() -> None:
     buggy ``freeze_point < 0 or True`` form (the ``or True`` would have made
     the branch always-true — a leftover that is NOT reproduced here).
 
-    The freshly-frozen ice is seeded at ``ICE_COLD_TARGET`` (Phase 02) so the
-    freeze front advances the same step rather than lagging a frame before
-    ``update_ice`` re-asserts the cold.
+    The freshly-frozen ice keeps the water's already-<=0 temp (realistic: no
+    cold-source seeding); it melts again once it warms above melt_point via
+    diffusion.
     """
     g = _step_single_cell(ElementId.WATER, ELEMENTS[ElementId.WATER].freeze_point - 5)
     assert g.get(0, 0) == ElementId.ICE
-    assert g.get_temp(0, 0) == ICE_COLD_TARGET  # new ice seeded cold (front advances)
+    # The new ice keeps the water's already-<=0 temp (realistic: no cold-source
+    # seeding). It was set to freeze_point-5, so it stays at freeze_point-5.
+    assert g.get_temp(0, 0) == ELEMENTS[ElementId.WATER].freeze_point - 5
 
 
-def test_ice_freeze_spreads_through_water() -> None:
-    """A block of ice in water freezes its surroundings (the freeze spreads).
+def test_dry_ice_freezes_water() -> None:
+    """A block of DRY_ICE in water freezes its surroundings (dry ice is the cold
+    source; the freeze spreads via diffusion).
 
-    The headline Phase-02 test: ice is a persistent cold source (re-asserts
-    ICE_COLD_TARGET each step), so cold propagates via diffusion into adjacent
-    water, the water cools below freeze_point, and the WATER rule freezes it
-    (seeding the new ice cold so the front keeps advancing). Prototype-measured
-    spread at ICE_COLD_TARGET=-50: 1 -> 3 -> 5 -> 9 cells over ~120 steps. This
-    is the regression guard for the 'ice no longer freezes water' bug.
+    The headline Phase-01 test: dry ice re-asserts DRY_ICE_COLD_TARGET (-78)
+    each step, so cold propagates via diffusion into adjacent water, the water
+    cools below freeze_point, and the WATER rule freezes it to ICE. Because the
+    newly-formed ice is NOT itself a cold source (realistic), the freeze front
+    advances by cold diffusing THROUGH the growing ice shell from the dry-ice
+    source -- slower than the interim 1->9-in-120 spread, but it DOES spread.
 
     It also pins the dormant-wake sufficiency finding: a real ``Simulation``
-    rebuilds its active set each step, so if the freeze spreads here the
-    existing wake conditions (movement/identity-change, thermal-change,
-    FIRE/LAVA) keep the front alive without needing ICE in the wake condition.
+    rebuilds its active set each step, so if ANY ice forms here the existing
+    wake conditions keep the front alive without needing DRY_ICE in the wake
+    condition. If this test freezes NOTHING, add DRY_ICE to condition 3
+    (simulation.py:168-170) per the plan's step 7.
     """
+    from sandfall.rules.dry_ice import DRY_ICE_COLD_TARGET
+
     random.seed(0)
     g = Grid(12, 12)
     # Fill the bottom half with water.
     for y in range(6, 12):
         for x in range(12):
             g.set(x, y, ElementId.WATER)
-    # Seed a small ice block in the middle of the water.
+    # Seed a small dry-ice block in the middle of the water.
     for dy in range(2):
         for dx in range(2):
-            g.set(5 + dx, 7 + dy, ElementId.ICE)
-            g.set_temp(5 + dx, 7 + dy, ICE_COLD_TARGET)
+            g.set(5 + dx, 7 + dy, ElementId.DRY_ICE)
+            g.set_temp(5 + dx, 7 + dy, DRY_ICE_COLD_TARGET)
     sim = Simulation(g)
-    ice_before = int((g.array == int(ElementId.ICE)).sum())
-    assert ice_before == 4  # the 2x2 seed
-    for _ in range(120):
+    assert int((g.array == int(ElementId.ICE)).sum()) == 0  # no ice yet
+    for _ in range(150):
         sim.step()
     ice_after = int((g.array == int(ElementId.ICE)).sum())
-    # The freeze spread: strictly more ice than the seed. (Prototype reaches ~9.)
-    assert ice_after > ice_before, (ice_before, ice_after)
+    # The dry ice froze some water (strictly more than zero). The exact count
+    # depends on DRY_ICE_COLD_TARGET tuning; the point is freezing happened at
+    # all. If ice_after == 0, the dormant-wake sufficiency is falsified -- apply
+    # the step-7 simulation.py edit and re-run.
+    assert ice_after > 0, ice_after
 
 
 def test_water_at_ambient_stays_water() -> None:
@@ -155,16 +162,60 @@ def test_ice_melts_to_steam_via_lava_contact() -> None:
     assert STEAM_LIFE_MIN <= g.get_life(0, 0) <= STEAM_LIFE_MAX
 
 
-def test_ice_at_ambient_stays_ice() -> None:
-    """Ice at ambient does NOT melt (it re-asserts cold; only fire/lava destroy it).
+def test_ice_melts_in_ambient() -> None:
+    """Ice at ambient MELTS to WATER (realistic non-source: temp > melt_point).
 
-    Deliberate temporary behavior -- ambient melt is disabled because it is
-    incompatible with being a cold source. See BACKLOG (Thermal realism rework).
+    This is the deliberate Phase-01 behavior change that retires the interim
+    persistent-cold-source model: ice no longer re-asserts cold, so a lone ice
+    block in 20C ambient warms above its melt_point and melts. (Dry ice / LN2 are
+    now the cold sources that freeze water.)
     """
     g = _step_single_cell(ElementId.ICE, 20)
-    assert g.get(0, 0) == ElementId.ICE
-    # And it re-asserted cold (the persistent-cold-source behavior).
-    assert g.get_temp(0, 0) == ICE_COLD_TARGET
+    assert g.get(0, 0) == ElementId.WATER
+
+
+def test_ice_does_not_freeze_water() -> None:
+    """Ice adjacent to ambient water does NOT freeze it (ice is a non-source).
+
+    Ice sits at ~0C and cannot pull 20C water below its freeze_point; only a
+    colder-than-freezing cold source (dry ice / LN2) can. The water cell stays
+    WATER (and the ice, warming via diffusion, eventually melts).
+    """
+    random.seed(0)
+    g = Grid(2, 1)
+    g.set(0, 0, ElementId.ICE)
+    g.set_temp(0, 0, 0)  # ice at its melt_point (stays ice: >0 is false)
+    g.set(1, 0, ElementId.WATER)
+    g.set_temp(1, 0, 5)  # mild water, well above freeze_point
+    for _ in range(10):
+        Simulation(g).step()
+    # The water cell never froze -- ice is not a cold source.
+    assert g.get(1, 0) == ElementId.WATER
+
+
+# --- DRY_ICE persistent cold source (thermal-realism) ----------------------
+
+
+def test_dry_ice_persists_in_ambient() -> None:
+    """Dry ice at ambient does NOT sublimate (it re-asserts cold; only fire/lava
+    destroy it). The deliberate persistent-cold-source behavior, now under the
+    dry-ice name instead of ice."""
+    from sandfall.rules.dry_ice import DRY_ICE_COLD_TARGET
+
+    g = _step_single_cell(ElementId.DRY_ICE, 20)
+    assert g.get(0, 0) == ElementId.DRY_ICE
+    # It re-asserted its cold target (the persistent-cold-source behavior).
+    assert g.get_temp(0, 0) == DRY_ICE_COLD_TARGET
+
+
+def test_dry_ice_sublimates_via_fire_contact() -> None:
+    """Dry ice sublimates to EMPTY when an orthogonal neighbor is FIRE."""
+    g = Grid(3, 1)
+    g.set(0, 0, ElementId.DRY_ICE)
+    g.set(1, 0, ElementId.FIRE)
+    g.set_life(1, 0, 50)  # keep fire alive through the step
+    Simulation(g).step()
+    assert g.get(0, 0) == ElementId.EMPTY
 
 
 # --- STEAM -> WATER (condense) ----------------------------------------------
@@ -313,7 +364,7 @@ def test_paint_brush_lava_sets_spawn_temp() -> None:
 
 
 def test_paint_brush_ice_sets_cold_spawn_temp() -> None:
-    """A painted ICE disk's cells hold ICE's cold temp_spawn (-5)."""
+    """A painted ICE disk's cells hold ICE's cold spawn temp (0)."""
     g = Grid(10, 10)
     paint_brush(g, 5, 5, 1, ElementId.ICE)
     ice_cells = [

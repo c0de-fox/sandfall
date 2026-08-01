@@ -21,6 +21,7 @@ from ..grid import Grid
 from ._common import seed_fire_life, seed_smoke_life, seed_steam_life
 from .acid import update_acid
 from .base import update_base
+from .dry_ice import update_dry_ice
 from .fire import update_fire
 from .glass import update_glass
 from .gunpowder import update_gunpowder
@@ -71,4 +72,6 @@ RULES: dict[ElementId, UpdateFn] = {
     ElementId.OIL: update_oil,
     # Gunpowder (explosive powder).
     ElementId.GUNPOWDER: update_gunpowder,
+    # Dry ice (persistent cold-source solid; thermal-realism).
+    ElementId.DRY_ICE: update_dry_ice,
 }

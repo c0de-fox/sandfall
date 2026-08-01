@@ -249,13 +249,14 @@ Defined in `elements.py`:
   `uint8` array: `EMPTY=0, SAND=1, WATER=2, STONE=3, WOOD=4, FIRE=5,
   SMOKE=6, PLANT=7` (the v1 set, unchanged) plus the Phase-03 temperature
   additions `STEAM=8, ICE=9, LAVA=10, GLASS=11`, the acid/base reactive-liquid
-  pair `ACID=12, BASE=13`, the light flammable liquid `OIL=14`, and the
-  explosive powder `GUNPOWDER=15`. The v1 docstring once said the enum was
-  "defined in full; never add new members"; that was superseded by the
-  temperature feature (user-approved). Existing values 0..7 are unchanged, so
-  every LUT index (renderer color LUT, conductivity LUT) that the v1 code
-  relies on stays stable; new members take 8..15. `uint8` holds up to 255, so
-  there is room for more.
+  pair `ACID=12, BASE=13`, the light flammable liquid `OIL=14`, the
+  explosive powder `GUNPOWDER=15`, and the persistent cold-source solid
+  `DRY_ICE=16`. The v1 docstring once said the enum was "defined in full;
+  never add new members"; that was superseded by the temperature feature
+  (user-approved). Existing values 0..7 are unchanged, so every LUT index
+  (renderer color LUT, conductivity LUT) that the v1 code relies on stays
+  stable; new members take 8..16. `uint8` holds up to 255, so there is room
+  for more.
 - **`Phase`** — `IntEnum` describing physical behavior: `SOLID` (static),
   `POWDER` (falls, piles), `LIQUID` (falls, spreads), `GAS` (rises,
   diffuses). Phase drives default behavior and the displacement test.
@@ -278,11 +279,12 @@ Defined in `elements.py`:
      phase-change thresholds. `0` means "this element does not undergo that
      transition" — except 0 is a VALID active threshold for water's
      `freeze_point` (water freezes at/below 0), so that rule is not guarded
-     by a `> 0` predicate. (ICE's `melt_point` is still declared but is NOT
-     read by the rule today: ice is a persistent cold source that re-asserts
-     `ICE_COLD_TARGET` each step and melts ONLY via direct fire/lava contact
-     — see `rules/ice.py`. The field is retained for the realistic-rework
-     BACKLOG item that will revert ice to a melt-at->0 "frozen water".)
+     by a `> 0` predicate. (ICE's `melt_point` (0) IS read by the realistic
+     `rules/ice.py`: a lone ice block melts to WATER when its own temp exceeds
+     0 — so ice in 20°C ambient melts, and ice does NOT freeze water on its
+     own; the colder-than-freezing cold sources `DRY_ICE` (-78) and (future)
+     LN2 (-196) cool adjacent water to/below its freeze_point, at which point
+     the WATER rule freezes it.)
 - **`ELEMENTS`** — the registry `dict[ElementId, Element]` consulted for
   colors (renderer), density (displacement), and all thermal behavior
   (conductivity, flashpoint, burn/spawn temp, phase-change thresholds).
@@ -524,14 +526,14 @@ Adding an element is a small, well-defined change touching five places:
    `thermal.build_conductivity_lut`), `heat_capacity` (plus a matching
    `CP_<NAME>` constant > 0 in `config.py` and a row in
    `thermal.build_heat_capacity_lut` — diffusion divides by cp, so it must be
-   positive), `temp_spawn` if it should paint
+   positive),    `temp_spawn` if it should paint
    hotter/colder than ambient (FIRE/LAVA/ICE), `flashpoint`/`burn_temp` if
    it is a fuel or a heat source, and whichever of `melt_point` /
    `boil_point` / `freeze_point` / `condense_point` drive its transitions
    (recall `0` means "no transition" except for water where `0` is a valid
-   active threshold; ice's `melt_point` is currently unused by its rule —
-   see `rules/ice.py` and the realistic-rework BACKLOG). The renderer picks
-   up its color automatically via the color LUT.
+   active threshold; ice's `melt_point` IS read by the realistic rule — ice
+   melts to WATER above 0°C). The renderer picks up its color automatically
+   via the color LUT.
 3. **`rules/<name>.py`** — write an `update_<name>` function implementing the
    rule contract above. Use `_common.swap` for every move and
    `_common.can_displace` for displacement tests; set `life` explicitly for

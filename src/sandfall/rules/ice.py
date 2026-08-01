@@ -1,23 +1,22 @@
-"""Ice (SOLID, persistent cold source) update rule.
+"""Ice (SOLID, frozen water) update rule.
 
-Ice is a **persistent cold source**: each step it re-asserts its cold target
-temperature (`ICE_COLD_TARGET`), exactly as a living fire cell re-asserts its
-burn_temp (`rules/fire.py`). The Simulation's vectorized diffusion pre-pass
-carries that cold outward into adjacent water; once the water cools to/below its
-freeze_point the WATER rule freezes it (and seeds the new ice cold, so the freeze
-front advances immediately). This is how ice freezes water *through the thermal
-system* rather than as a diffusion-bug side-effect.
+Ice is **realistic frozen water**: it melts to WATER when its own temperature
+exceeds its ``melt_point`` (0C) -- so a lone ice block in 20C ambient melts,
+and ice warming at the edge of a freeze patch reverts to water. Ice does NOT
+freeze water on its own (it sits at ~0C and cannot pull 20C water below 0);
+freezing water now requires a colder-than-freezing cold source whose diffusion
+cools adjacent water to/below 0C, at which point the WATER rule freezes it. See
+``rules/dry_ice.py`` (persistent, -78C) and ``rules/ln2.py`` (transient, -196C).
 
-Ice melts **only via direct fire/lava contact** (the real-world way ice is
-destroyed quickly): if any orthogonal neighbor is FIRE the ice becomes WATER; if
-any is LAVA the ice becomes STEAM (mirroring `rules/lava.py`'s reaction shape).
-It does NOT melt from ambient warmth: a cell that re-asserts ICE_COLD_TARGET
-every step can never exceed its melt_point through diffusion, and allowing
-thermal melt would be logically incompatible with being a cold source (a warm
-enough ice to melt would also be too warm to freeze anything). This is a
-**deliberate, temporary** model: once colder-than-freezing cold-source elements
-exist (dry ice ~-78C, liquid nitrogen ~-196C), ice will revert to a realistic
-melt-at->0 "frozen water" non-source -- see BACKLOG ("Thermal realism" rework).
+Ice is still destroyed quickly by direct fire/lava contact (the real-world way):
+a FIRE neighbor -> WATER; a LAVA neighbor -> STEAM (the lava reaction flashes
+the melt to steam). This is checked FIRST so a hot contact destroys the ice
+before the ambient-melt branch runs.
+
+This reverts the interim persistent-cold-source model (re-asserting an
+``ICE_COLD_TARGET`` and disabling ambient melt) that shipped so ice could freeze
+water before real cold-source elements existed; dry ice now fills that role. See
+the ``thermal-realism`` plan and BACKLOG ("Thermal realism rework").
 
 This is the formal use of the reactive-rule contract relaxation (transform own
 cell in place, return None); the cell does not MOVE so the simulation's
@@ -30,13 +29,8 @@ from ..elements import ELEMENTS, ElementId
 from ..grid import Grid
 from ._common import seed_steam_life
 
-# The cold temperature an ice cell holds (and re-asserts) each step. A cold
-# source: diffusion carries this cold outward, but cannot warm the ice above
-# this value while the rule keeps re-asserting it. NOT a physical temperature --
-# it is a tunable knob for freeze spread rate (colder -> faster spread).
-# Prototype-validated at -50 (an ice cube in water spreads 1->3->5->9 cells over
-# ~120 steps). Mirrors the LAVA_SOLIDIFY_TEMP pattern in rules/lava.py.
-ICE_COLD_TARGET = -50
+_ICE = ELEMENTS[ElementId.ICE]
+_STEAM = ELEMENTS[ElementId.STEAM]
 
 # Orthogonal neighborhood for the fire/lava melt check (matches the
 # 4-neighborhood the diffusion pre-pass and lava.py use).
@@ -47,21 +41,20 @@ _MELT_NEIGHBORS: tuple[tuple[int, int], ...] = (
     (1, 0),
 )
 
-_STEAM = ELEMENTS[ElementId.STEAM]
-
 
 def update_ice(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
-    """Step an ice cell: melt via direct fire/lava contact, else re-assert cold.
+    """Step an ice cell: melt via direct fire/lava contact, else melt in place
+    when warmer than melt_point (realistic ambient melt).
 
     1. **Melt via direct fire/lava contact.** A FIRE neighbor -> become WATER; a
        LAVA neighbor -> become STEAM (the lava reaction flashes the melt to
-       steam). Checked FIRST so a hot contact destroys the ice before it can
-       re-assert cold. (Ice does NOT melt from ambient -- see module docstring.)
-    2. **Re-assert the cold target.** While still ice, clamp the cell's temp
-       DOWN to ICE_COLD_TARGET each step so it remains a persistent cold source
-       the diffusion pre-pass draws from (mirrors fire's burn-temp re-assert).
+       steam). Checked FIRST so a hot contact destroys the ice immediately.
+    2. **Thermal melt.** Otherwise, if the cell's own temp exceeds its
+       melt_point (0C), become WATER -- a lone ice block in ambient melts. (The
+       melt_point is now USED, unlike under the interim cold-source model where
+       it was declared-but-unread.)
     """
-    # 1. Direct fire/lava contact melts the ice.
+    # 1. Direct fire/lava contact melts the ice (dramatic reactions first).
     for dx, dy in _MELT_NEIGHBORS:
         nx, ny = x + dx, y + dy
         if not grid.in_bounds(nx, ny):
@@ -76,8 +69,9 @@ def update_ice(grid: Grid, x: int, y: int) -> tuple[int, int] | None:
             grid.set(x, y, ElementId.WATER)
             return None
 
-    # 2. Re-assert cold: a living ice is a persistent cold source.
-    if grid.get_temp(x, y) > ICE_COLD_TARGET:
-        grid.set_temp(x, y, ICE_COLD_TARGET)
+    # 2. Thermal melt: warmer than melt_point -> WATER (realistic ambient melt).
+    if grid.get_temp(x, y) > _ICE.melt_point:
+        grid.set(x, y, ElementId.WATER)
+        return None
 
     return None

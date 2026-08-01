@@ -48,6 +48,13 @@ class ElementId(IntEnum):
     flashpoint (~200). Fire, lava, or another explosion's heat burst all set
     it off -> chain reactions for free. Same shape as the prior extensions;
     existing values 0..14 are unchanged so every LUT index stays stable.
+
+    Extended once more with dry ice (DRY_ICE=16) — a SOLID persistent cold
+    source that re-asserts -78C each step (the realistic Powder Toy / Sandboxels
+    cold source; dry ice takes over the role ice played under the interim
+    persistent-cold-source model, named and tuned realistically at CO2's
+    sublimation point). Same shape as the prior extensions; existing values
+    0..15 are unchanged so every LUT index stays stable.
     """
 
     EMPTY = 0
@@ -69,6 +76,8 @@ class ElementId(IntEnum):
     OIL = 14
     # --- New element (gunpowder) ---
     GUNPOWDER = 15
+    # --- New element (thermal-realism: dry ice cold source) ---
+    DRY_ICE = 16
 
 
 class Phase(IntEnum):
@@ -235,7 +244,7 @@ ELEMENTS: dict[ElementId, Element] = {
         phase=Phase.SOLID,
         conductivity=0.18,
         heat_capacity=2.0,
-        temp_spawn=-5,  # painted ice starts cold
+        temp_spawn=0,  # painted ice starts at ~0C (frozen water; melts >0)
         melt_point=0,  # above 0 -> WATER (0 is a VALID active threshold for ice)
     ),
     ElementId.LAVA: Element(
@@ -325,5 +334,23 @@ ELEMENTS: dict[ElementId, Element] = {
         conductivity=0.15,  # a powder, like sand
         heat_capacity=1.5,
         flashpoint=200,
+    ),
+    # --- Dry ice (SOLID, persistent cold source; thermal-realism) -----------
+    # SOLID at density ~1.0 (does not flow; sits where painted). Re-asserts
+    # DRY_ICE_COLD_TARGET (-78C, CO2 sublimation point) each step in its rule
+    # (rules/dry_ice.py), so it is the cold source that freezes water (the role
+    # ice used to play in the interim model, but colder and named realistically).
+    # temp_spawn=-78 (painted dry ice starts at its cold target). Persists in
+    # ambient; sublimates only via direct fire/lava contact (EMPTY/SMOKE). No
+    # flashpoint/burn (it is a cold source, not a fuel).
+    ElementId.DRY_ICE: Element(
+        id=ElementId.DRY_ICE,
+        name="dry ice",
+        color=(225, 230, 235),  # pale off-white (distinct from ICE 180,220,240)
+        density=1.0,
+        phase=Phase.SOLID,
+        conductivity=0.20,
+        heat_capacity=2.0,
+        temp_spawn=-78,
     ),
 }

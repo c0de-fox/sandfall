@@ -269,8 +269,8 @@ def test_gunpowder_density_like_sand() -> None:
 # --- renderer LUT grew -----------------------------------------------------
 
 
-def test_color_lut_has_16_rows() -> None:
-    """build_color_lut sizes from len(ElementId). After this phase the enum has
-    16 members (0..15). The assertion tracks len(ElementId) so the next element
-    pass does not need to re-edit it."""
-    assert build_color_lut().shape[0] == len(ElementId) == 16
+def test_color_lut_has_17_rows() -> None:
+    """build_color_lut sizes from len(ElementId). After the dry-ice phase the
+    enum has 17 members (0..16). The assertion tracks len(ElementId) so the next
+    element pass does not need to re-edit it."""
+    assert build_color_lut().shape[0] == len(ElementId) == 17

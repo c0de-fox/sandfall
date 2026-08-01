@@ -68,16 +68,16 @@ SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
 GRID_WIDTH = INITIAL_WINDOW_W // CELL_SIZE  # 800 // 4 == 200  (initial cols)
 GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140  (initial rows)
 
-# Minimum window size. Width must fit the whole palette (18 items: 15 element
+# Minimum window size. Width must fit the whole palette (19 items: 16 element
 # swatches + Eraser + Brush-shape + Magnifier). Width math:
-#   18 * PALETTE_SWATCH + 17 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
-#   = 18*24 + 17*4 + 12 + 2*8 = 432 + 68 + 12 + 16 = 528  (== 132 * CELL_SIZE)
-# 528 is the next clean CELL_SIZE multiple above the needed 528, = 132 cols.
+#   19 * PALETTE_SWATCH + 18 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
+#   = 19*24 + 18*4 + 12 + 2*8 = 456 + 72 + 12 + 16 = 556  (== 139 * CELL_SIZE)
+# 556 is a clean CELL_SIZE multiple, = 139 cols.
 # Height must fit the 40px palette + a usable sim area (>= 40 cells == 160px)
 # -> 200. The minimum is enforced by the compositor via Window.minimum_size
 # (see Game.__init__); compute_grid_dims additionally floor-clamps the GRID
 # cols/rows to MIN_GRID_* so a tiny window still has a usable grid.
-MIN_WINDOW_W = 528
+MIN_WINDOW_W = 556
 MIN_WINDOW_H = 200
 MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 528 // 4 == 132
 MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 40
@@ -134,6 +134,9 @@ COND_BASE = 0.30
 COND_OIL = 0.12
 # Gunpowder (explosive powder). A powder like sand: low conductivity.
 COND_GUNPOWDER = 0.15
+# Dry ice (persistent cold-source solid). Mid conductivity (cold propagates
+# through it to adjacent water); cp like ice (2.0).
+COND_DRY_ICE = 0.20
 
 # Per-material heat capacity (thermal inertia / thermal mass). Divides the
 # temperature change in diffuse_temps: high cp = changes slowly = thermally
@@ -162,6 +165,8 @@ CP_BASE = 2.0
 CP_OIL = 1.5
 # Gunpowder (explosive powder). Same thermal mass as sand (1.5).
 CP_GUNPOWDER = 1.5
+# Dry ice (persistent cold-source solid).
+CP_DRY_ICE = 2.0
 
 # --- Heat-overlay display band (Phase 04) -----------------------------------
 # ``thermal.thermal_to_rgb`` maps the temp field's full color span across

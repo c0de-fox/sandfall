@@ -109,7 +109,13 @@ def test_acid_dissolves_plant(monkeypatch: object) -> None:
 
 
 def test_acid_dissolves_ice(monkeypatch: object) -> None:
-    """Acid eats ICE (ice does not melt from acid contact, but acid dissolves it)."""
+    """Acid eats ICE (ice does not melt from acid contact, but acid dissolves it).
+
+    The ice is held below its melt_point so it stays ice: under the realistic
+    model ice at ambient (>0C) melts to WATER on its own via the thermal branch,
+    which would race the acid and turn the test into a scan-order coin-flip.
+    Holding it frozen isolates the acid-dissolve path the test targets.
+    """
     import sandfall.rules.acid as acid
 
     monkeypatch.setattr(acid, "DISSOLVE_CHANCE", 1.0)
@@ -117,6 +123,7 @@ def test_acid_dissolves_ice(monkeypatch: object) -> None:
     g = Grid(2, 1)
     g.set(0, 0, ElementId.ACID)
     g.set(1, 0, ElementId.ICE)
+    g.set_temp(1, 0, -10)  # hold the ice frozen (realistic ice melts at >0)
     Simulation(g).step()
     assert g.get(1, 0) == ElementId.EMPTY
     assert g.get(0, 0) == ElementId.EMPTY

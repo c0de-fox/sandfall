@@ -17,6 +17,7 @@ import numpy.typing as npt
 from .config import (
     COND_ACID,
     COND_BASE,
+    COND_DRY_ICE,
     COND_EMPTY,
     COND_FIRE,
     COND_GLASS,
@@ -33,6 +34,7 @@ from .config import (
     COND_WOOD,
     CP_ACID,
     CP_BASE,
+    CP_DRY_ICE,
     CP_EMPTY,
     CP_FIRE,
     CP_GLASS,
@@ -86,6 +88,8 @@ def build_conductivity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.OIL)] = COND_OIL
     # Gunpowder (row 15).
     lut[int(ElementId.GUNPOWDER)] = COND_GUNPOWDER
+    # Dry ice (persistent cold-source solid).
+    lut[int(ElementId.DRY_ICE)] = COND_DRY_ICE
     return lut
 
 
@@ -118,6 +122,8 @@ def build_heat_capacity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.OIL)] = CP_OIL
     # Gunpowder (row 15).
     lut[int(ElementId.GUNPOWDER)] = CP_GUNPOWDER
+    # Dry ice (persistent cold-source solid).
+    lut[int(ElementId.DRY_ICE)] = CP_DRY_ICE
     return lut
 
 

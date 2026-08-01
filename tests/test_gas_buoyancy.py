@@ -19,6 +19,18 @@ uniformly so diffusion is a no-op and neither phase transition can fire
 regardless of scan order -- this keeps the buoyancy swap the ONLY thing under
 test (a water boiling to steam at the steam's old cell would otherwise be a
 false-positive "swap").
+
+This file also tests the COMPLEMENT of buoyancy -- a denser phase flowing
+THROUGH a gas (can_displace's gas clause): WATER flows sideways through a
+steam wall, WATER sinks through STEAM, and SAND falls through STEAM. The two
+directions are symmetric (denser phase down/in, lighter phase up) and must
+coexist: a steam wall no longer dams flowing water, while steam still rises
+through water (test_steam_rises_through_water). One legacy drift test was
+repurposed to flank with STONE instead of WATER: once gases became
+displacable the water-flanks shove the boxed steam (the new correct
+liquid-through-gas behavior), which would confound the drift-is-air-only
+assertion -- drift rejects any non-EMPTY cell identically, so stone flanks
+preserve that lock.
 """
 
 from __future__ import annotations
@@ -169,17 +181,18 @@ def test_steam_does_not_rise_through_solid_or_gas() -> None:
     assert g2.get(1, 1) == ElementId.SMOKE
 
 
-def test_drift_does_not_go_sideways_through_liquid() -> None:
-    """Buoyancy is UPWARD only. A steam cell blocked above by STONE and flanked
-    left/right by WATER cannot rise (stone is not riseable) and must NOT drift
-    sideways through the water (drift is EMPTY-only). The steam stays put.
+def test_drift_does_not_go_sideways_into_non_empty() -> None:
+    """Buoyancy is UPWARD only and DRIFT is EMPTY-only. A steam cell blocked
+    above by STONE and flanked left/right by STONE cannot rise (stone is not
+    riseable) and must NOT drift sideways into the stone (drift is EMPTY-only).
+    The steam stays put.
 
-    Fully boxed geometry (all border cells STONE, steam in the center, WATER
-    flanking left/right): the up-diagonal corners are STONE (so the steam cannot
-    escape diagonally into an open corner), and the floor under the water is
-    STONE (so the water cannot fall away). This makes "stays put" deterministic
-    for both the steam and the water (see the spec note recommending the corners
-    be filled).
+    Flanks are STONE (not WATER) because, post gas-displacement fix, a WATER
+    flank would shove the boxed steam sideways (the new correct
+    liquid-through-gas behavior -- see test_water_flows_through_steam_sideways),
+    which would confound this drift-is-air-only assertion. Drift rejects any
+    non-EMPTY cell identically, so stone flanks lock the invariant without
+    collision.
     """
     random.seed(0)
     g = Grid(3, 3)
@@ -190,13 +203,121 @@ def test_drift_does_not_go_sideways_through_liquid() -> None:
     for x in range(g.width):
         g.set(x, 0, ElementId.STONE)
         g.set(x, 2, ElementId.STONE)
-    # Steam in the middle; WATER on both sides (drift targets, but not EMPTY).
+    # Steam in the middle; STONE on both sides (drift targets, but not EMPTY).
     g.set(1, 1, ElementId.STEAM)
     g.set_life(1, 1, 200)
-    g.set(0, 1, ElementId.WATER)
-    g.set(2, 1, ElementId.WATER)
     _warm_all(g)
     Simulation(g).step()
-    assert g.get(1, 1) == ElementId.STEAM  # did not drift into the water
-    assert g.get(0, 1) == ElementId.WATER
-    assert g.get(2, 1) == ElementId.WATER
+    assert g.get(1, 1) == ElementId.STEAM  # did not drift into the stone
+    assert g.get(0, 1) == ElementId.STONE
+    assert g.get(2, 1) == ElementId.STONE
+
+
+def test_water_flows_through_steam_sideways() -> None:
+    """Complement of buoyancy: a denser phase flows THROUGH a gas. WATER beside
+    a STEAM wall (both on a stone floor, stone bookends boxing the row) swaps
+    sideways -- the water enters the steam's old cell and the steam is pushed
+    to the water's old cell (then it would continue rising via is_riseable
+    next step). Uniform warm temp (> STEAM.condense_point 60, <= WATER.boil_point
+    100) keeps the steam gaseous so it isn't lost to condensation.
+
+    Robust to scan order and the per-row x-randomization: if the steam is
+    visited first it cannot rise (y-1 out of bounds) nor drift (both neighbors
+    non-EMPTY), so it stays; the water then shoves it. If the water is visited
+    first it shoves the steam directly. Either order yields the same swap.
+    """
+    random.seed(0)
+    g = Grid(4, 2)
+    # Row 1 (floor): all stone so neither cell can fall.
+    for x in range(g.width):
+        g.set(x, 1, ElementId.STONE)
+    # Row 0: stone | WATER | STEAM | stone  (water boxed left by stone).
+    g.set(0, 0, ElementId.STONE)
+    g.set(1, 0, ElementId.WATER)
+    g.set(2, 0, ElementId.STEAM)
+    g.set_life(2, 0, 200)
+    g.set(3, 0, ElementId.STONE)
+    _warm_all(g)
+    Simulation(g).step()
+    assert g.get(2, 0) == ElementId.WATER  # water flowed into the steam's cell
+    assert g.get(1, 0) == ElementId.STEAM  # steam shoved to the water's old cell
+
+
+def test_water_falls_through_steam() -> None:
+    """Complement of buoyancy: WATER directly above STEAM sinks THROUGH it.
+    After one step the water is below (in the steam's old cell) and the steam
+    is above (in the water's old cell); the steam then continues rising via
+    is_riseable. Stone walls box the column; warm temp keeps the steam gaseous.
+
+    Robust to scan order: bottom->top visits the steam first -- it rises into
+    the water above via is_riseable (the buoyancy path). Top->down would let
+    the water sink via can_displace. Both yield the identical swap, so the
+    assertions hold unseeded.
+    """
+    random.seed(0)
+    g = Grid(3, 4)
+    for y in range(g.height):
+        g.set(0, y, ElementId.STONE)
+        g.set(2, y, ElementId.STONE)
+    g.set(1, 3, ElementId.STONE)  # floor
+    g.set(1, 1, ElementId.WATER)  # water above...
+    g.set(1, 2, ElementId.STEAM)  # ...steam below
+    g.set_life(1, 2, 200)
+    _warm_all(g)
+    Simulation(g).step()
+    assert g.get(1, 2) == ElementId.WATER  # water sank through the steam
+    assert g.get(1, 1) == ElementId.STEAM  # steam bubbled up
+
+
+def test_sand_falls_through_steam() -> None:
+    """Complement of buoyancy extends to POWDERs too: SAND directly above STEAM
+    sinks through it. After one step the sand is below and the steam above.
+
+    Robust to scan order: if the steam is visited first it tries to rise into
+    the sand -- is_riseable(SAND) is False (sand is POWDER, not EMPTY/LIQUID)
+    -- so it stays; the sand then sinks via can_displace. The warm temp keeps
+    the steam gaseous; sand does not melt at 80C (melt_point 1700).
+    """
+    random.seed(0)
+    g = Grid(3, 4)
+    for y in range(g.height):
+        g.set(0, y, ElementId.STONE)
+        g.set(2, y, ElementId.STONE)
+    g.set(1, 3, ElementId.STONE)  # floor
+    g.set(1, 1, ElementId.SAND)  # sand above...
+    g.set(1, 2, ElementId.STEAM)  # ...steam below
+    g.set_life(1, 2, 200)
+    _warm_all(g)
+    Simulation(g).step()
+    assert g.get(1, 2) == ElementId.SAND  # sand sank through the steam
+    assert g.get(1, 1) == ElementId.STEAM  # steam bubbled up
+
+
+def test_water_displaces_fire_edge() -> None:
+    """EDGE (current behavior, not a feature): the gas clause also lets WATER
+    displace FIRE (a GAS) -- water shoves fire aside rather than dousing it,
+    because there is no fire+water extinguish mechanic yet. The fire is pushed
+    to the water's old cell and keeps its life; a proper extinguish is tracked
+    as future work. Locked here so a later extinguish feature changes this test
+    deliberately.
+
+    NOTE: FIRE.temp_spawn is 800C (>> WATER.boil_point 100). The heat-diffusion
+    pre-pass can boil the water cell before it moves, so this test forces the
+    water cell cold via ``set_temp`` and asserts the shove on step 1. Verified
+    deterministic across seeds 0..7 (one diffusion step from 20C toward an 800C
+    neighbor stays under the >100 boil threshold, so the water survives to shove
+    the fire).
+    """
+    random.seed(0)
+    g = Grid(3, 4)
+    for y in range(g.height):
+        g.set(0, y, ElementId.STONE)
+        g.set(2, y, ElementId.STONE)
+    g.set(1, 3, ElementId.STONE)  # floor
+    g.set(1, 1, ElementId.WATER)
+    g.set_temp(1, 1, 20)  # AMBIENT; keep the water from boiling this step
+    g.set(1, 2, ElementId.FIRE)
+    g.set_life(1, 2, 30)
+    Simulation(g).step()
+    assert g.get(1, 2) == ElementId.WATER  # water shoved the fire
+    assert g.get(1, 1) == ElementId.FIRE  # fire pushed to the water's old cell

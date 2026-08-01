@@ -4,7 +4,9 @@ These encode the cross-rule contracts used throughout the simulation:
 
 * :func:`can_displace` — the density/phase swap test (sand sinks in water;
   water itself only displaces EMPTY in v1 since no lower-density liquid
-  exists yet).
+  exists yet, but every liquid/powder also displaces any GAS -- the
+  complement of :func:`is_riseable`: a denser phase flows through a gas, e.g.
+  water through a steam wall, sand through steam).
 * :func:`is_riseable` — the gas buoyancy test (EMPTY or any LIQUID). A gas may
   rise INTO an EMPTY cell (open air) or any LIQUID cell (buoyancy -- the gas
   swaps with the liquid above it, gas up / liquid down). Solids and other
@@ -40,16 +42,28 @@ _LIQUID_IDS: frozenset[int] = frozenset(
 def can_displace(src_id: ElementId, target_id: int) -> bool:
     """True if an element ``src_id`` may move into a cell holding ``target_id``.
 
-    A cell is displacable if it is EMPTY, or if it holds a strictly
+    A cell is displacable if it is EMPTY; or if it holds a strictly
     lower-density LIQUID (so denser powders/liquids sink through lighter
-    liquids). Solids, gases, and same/higher-density liquids are not
-    displacable.
+    liquids); or if it holds a GAS and ``src_id`` is a LIQUID or POWDER -- the
+    complement of :func:`is_riseable` (a denser phase flows through a gas:
+    water flows through a steam wall, sand falls through steam). Solids and
+    same/higher-density liquids are not displacable; gas-gas and solid sources
+    never displace (the gas clause's ``src.phase in (LIQUID, POWDER)`` guard).
     """
     if target_id == ElementId.EMPTY:
         return True
     src = ELEMENTS[src_id]
     target = ELEMENTS[ElementId(target_id)]
-    return target.phase == Phase.LIQUID and target.density < src.density
+    # A denser liquid/powder sinks through a strictly-lighter liquid.
+    if target.phase == Phase.LIQUID and target.density < src.density:
+        return True
+    # A liquid or powder flows through a gas -- the complement of is_riseable
+    # (gas rises through liquid). E.g. water flows through a steam wall; sand
+    # falls through steam. EMPTY is Phase.GAS but is already caught above, so
+    # this only reaches FIRE / SMOKE / STEAM.
+    if target.phase == Phase.GAS and src.phase in (Phase.LIQUID, Phase.POWDER):
+        return True
+    return False
 
 
 def is_riseable(cell_id: int) -> bool:

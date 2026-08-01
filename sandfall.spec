@@ -1,5 +1,5 @@
 # sandfall.spec
-# PyInstaller spec for the sandfall single-file Linux build.
+# PyInstaller spec for the sandfall single-file build (Linux / Windows / macOS).
 #
 # Build with:  uv run pyinstaller sandfall.spec --noconfirm
 # Output:      dist/sandfall   (single self-contained executable, --onefile)

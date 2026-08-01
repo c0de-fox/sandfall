@@ -10,6 +10,16 @@
 
 ## Recently shipped
 
+- **Cross-platform builds + CI** (`.agent/tasks/cross-platform-ci/`) — Windows /
+  Linux / macOS single-file binaries are now built automatically by GitHub
+  Actions on every `v*` tag (`release.yml`, 3-OS matrix, per-platform asset
+  rename + release attach) and a Linux quality gate (`ci.yml`: ruff / mypy /
+  pytest + a build-smoke) runs on every push/PR. The `--onefile` `sandfall.spec`
+  needed only a header-comment refresh — it was already portable (env-driven
+  `console` + `collect_all`). **Code-signing / notarization remains deferred**
+  (needs credentials); v1 ships unsigned binaries (SmartScreen / Gatekeeper
+  caveat documented). macOS ships as a bare executable (no `.app`).
+  `source: project AGENTS.md (Future Work) + README + sandfall/00 (Windows/macOS builds + CI explicitly deferred).`
 - **`Grid.move` raw-array fast-swap** (`85f6a68`) — collapsed the per-move `swap`
   from 12 Grid method calls to 1; ~1.6× on busy/moving scenes. Its follow-on,
   the **`can_displace` LUT** (Tier 1), is still the next perf lever.
@@ -50,12 +60,6 @@
 - **Electricity / conductivity** — wires, sparks, machines. (Name clash to
   resolve: the existing `conductivity` is a *heat* conductivity, not electrical.)
   `source: sandfall-temperature/00` (Electricity / conductivity-as-current; Sandboxels / Powder Toy have it).
-- **Cross-platform builds + CI** — Windows `.exe` and macOS `.app` via
-  PyInstaller, plus a GitHub Actions matrix (`windows-latest`, `macos-latest`,
-  `ubuntu-latest`) uploading `dist/sandfall*` per release tag. PyInstaller
-  cannot cross-compile, so each platform builds on its own runner. Only the
-  Linux binary is validated today.
-  `source: project `AGENTS.md` (Future Work) + `README` + `sandfall/00` (Windows/macOS builds + CI explicitly deferred).
 - **Ambient thermostat / Newton's-law-of-cooling drift** toward `AMBIENT_TEMP`
   — the closed, insulated thermal system slowly accumulates heat over a long
   session (fire re-asserts burn-temp every step); this is the documented

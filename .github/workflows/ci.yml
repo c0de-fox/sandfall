@@ -1,0 +1,40 @@
+# Quality gate: lint, type-check, tests, import smoke, and a Linux build-smoke.
+# Runs on every push to main and every pull request. OS-independent checks run
+# on Linux only (cheap + sufficient); the cross-OS release build lives in
+# release.yml and fires on version tags. The repo is PUBLIC, so Actions is free.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # uv manages both uv and Python: `uv sync` reads .python-version (3.12)
+      # and installs that interpreter itself, so no explicit python-version is
+      # needed here. enable-cache caches the uv store / wheels for speed.
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      # --- Quality gates (all must pass) ---
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run pytest
+
+      # --- Import smoke ---
+      - run: uv run python -c "import sandfall"
+
+      # --- Linux build-smoke (recommended; catches spec regressions on every
+      #     push. ~30s and free on a public repo. If it ever proves flaky it
+      #     can be dropped without touching the quality gate above.) ---
+      - run: SANDFALL_RELEASE=1 uv run pyinstaller sandfall.spec --noconfirm

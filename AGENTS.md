@@ -59,19 +59,28 @@ Notes:
 
 ## Future Work
 
-Cross-platform packaging is **deferred** (out of scope for v1; tracked here
-so it isn't forgotten):
+Cross-platform packaging has **shipped**:
 
-- **Windows `.exe` and macOS `.app` builds.** PyInstaller cannot
-  cross-compile: a Windows executable must be produced on Windows, a macOS
-  app on macOS. The `sandfall.spec` should generalize cleanly (the only
-  platform-specific lines are `console=` and the bootloader selection,
-  which PyInstaller picks automatically), but it has only been validated
-  on Linux x86-64 so far. Each platform will likely need its own
-  `.spec` tweaks (icon, code-signing identity, `console=False` for GUI).
-- **CI matrix (GitHub Actions).** Once the per-platform specs are drafted,
-  a CI workflow should run `uv sync && uv run pyinstaller <spec>` on
-  `windows-latest`, `macos-latest`, and `ubuntu-latest` runners and upload
-  the resulting `dist/sandfall*` artifacts against each release tag. This
-  is the natural place to also flip `console=False` and apply signing.
+- **Windows, Linux, and macOS single-file binaries** are built automatically
+  by GitHub Actions. `.github/workflows/release.yml` runs
+  `SANDFALL_RELEASE=1 uv run pyinstaller sandfall.spec --noconfirm` on
+  `ubuntu-latest`, `windows-latest`, and `macos-latest` runners, renames each
+  output to a distinct asset (`sandfall-linux-x86_64`,
+  `sandfall-windows-x86_64.exe`, `sandfall-macos-arm64`), and attaches them
+  to the release created by every `v*` tag. `.github/workflows/ci.yml` runs
+  the Linux quality gate (ruff / mypy / pytest + a build-smoke) on every
+  push and pull request. The `--onefile` `sandfall.spec` needed **only a
+  header-comment refresh** — it was already portable (env-driven `console` +
+  `collect_all`, PyInstaller auto-selects the bootloader). macOS ships as a
+  **bare executable** (no `.app` bundle — a `BUNDLE`/`COLLECT` block would
+  collide with the `--onefile` design).
+
+The **only** remaining deferred packaging sub-item is:
+
+- **Code-signing / notarization.** A Windows code-signing cert and a macOS
+  Developer ID + `notarytool` need credentials the project does not yet have.
+  Until then v1 ships **unsigned** binaries (Windows SmartScreen + macOS
+  Gatekeeper "unidentified developer" warnings — documented as the v1
+  caveat in the README). This is the natural place to apply signing once
+  credentials exist.
 

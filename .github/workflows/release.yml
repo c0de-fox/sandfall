@@ -1,0 +1,68 @@
+# Release builds: produce a single-file binary per OS on every version tag and
+# attach it to the GitHub release the tag created. PyInstaller is NOT a
+# cross-compiler, so each target OS builds on its own runner. The repo is
+# PUBLIC, so the Windows (2x) and macOS (10x) billing multipliers do NOT apply
+# (those only hit the private-repo 2,000-min free quota).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# softprops/action-gh-release needs to write the release (upload assets).
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false   # one OS failing must not cancel the others
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      # Release mode: SANDFALL_RELEASE=1 detaches the console window and
+      # disables the windowed-traceback dialog (see sandfall.spec:47-49).
+      # `shell: bash` is REQUIRED on Windows: the env-prefix syntax and `mv`
+      # below are bash-isms and Windows defaults to PowerShell otherwise.
+      - name: Build (release)
+        shell: bash
+        run: SANDFALL_RELEASE=1 uv run pyinstaller sandfall.spec --noconfirm
+
+      # PyInstaller emits dist/sandfall (linux/mac) or dist/sandfall.exe
+      # (windows). Rename to a distinct, self-describing asset per OS.
+      # macos-latest is Apple Silicon (arm64); Intel Macs use Rosetta.
+      - name: Rename per-platform asset
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            mv dist/sandfall.exe dist/sandfall-windows-x86_64.exe
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            mv dist/sandfall dist/sandfall-macos-arm64
+          else
+            mv dist/sandfall dist/sandfall-linux-x86_64
+          fi
+
+      # Always upload the binary as a workflow artifact (downloadable from the
+      # run even for a throwaway / non-release tag test).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sandfall-${{ matrix.os }}
+          path: dist/sandfall-*
+          if-no-files-found: error
+
+      # Attach the per-platform binary to the release the tag created.
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/sandfall-*

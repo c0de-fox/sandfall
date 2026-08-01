@@ -74,9 +74,9 @@ When the magnifier is on, its button is outlined in white and a bordered
 
 - **Python** >= 3.12
 - **uv** (manages Python and all dependencies; the `uv.lock` lockfile is committed)
-- **OS:** Linux. Windows and macOS builds are future work (see
-  [Status](#status)) — the game itself runs anywhere pygame-ce does, but only
-  the Linux single-binary build has been validated.
+- **OS:** Linux, Windows, and macOS. The game runs anywhere pygame-ce does,
+  and release binaries for all three OS are produced automatically by CI on
+  `v*` tags (see [Cross-platform builds (CI)](#cross-platform-builds-ci)).
 
 ## Quick start (development)
 
@@ -123,6 +123,36 @@ Notes:
   not installed on the build host.
 - `build/` and `dist/` are gitignored.
 
+### Cross-platform builds (CI)
+
+Release binaries for **Windows, Linux, and macOS are produced automatically**
+by GitHub Actions whenever a `v*` tag is pushed. A `v1.0.0` tag, for example,
+publishes three assets to that tag's release:
+
+- `sandfall-linux-x86_64`
+- `sandfall-windows-x86_64.exe`
+- `sandfall-macos-arm64` (Apple Silicon; Intel Macs run it via Rosetta 2)
+
+The workflow (`.github/workflows/release.yml`) runs `uv sync && SANDFALL_RELEASE=1
+uv run pyinstaller sandfall.spec --noconfirm` on `ubuntu-latest`,
+`windows-latest`, and `macos-latest` runners. (PyInstaller cannot
+cross-compile, so each binary is built on its own OS.) A separate Linux
+workflow (`.github/workflows/ci.yml`) runs lint, type-check, and tests on
+every push and pull request.
+
+The local Linux build is unchanged:
+
+```bash
+SANDFALL_RELEASE=1 uv run pyinstaller sandfall.spec --noconfirm
+```
+
+> **Unsigned-binary caveat (v1).** Windows binaries will trigger SmartScreen
+> and macOS binaries will trigger Gatekeeper's "unidentified developer"
+> warning, because code-signing / notarization is deferred (it needs
+> credentials the project does not yet have). On macOS, run
+> `xattr -dr com.apple.quarantine /path/to/sandfall-macos-arm64` to clear the
+> quarantine flag. macOS ships as a **bare executable** (no `.app` bundle).
+
 ## Project layout
 
 ```
@@ -160,18 +190,14 @@ For how the pieces fit together, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md
 
 ## Status
 
-**v1 is complete and Linux-only.** The game is fully playable and the
-single-file binary build is validated on Linux x86-64.
+**v1 is complete.** The game is fully playable and the single-file binary
+build runs on **Linux, Windows, and macOS**. Release binaries for all three
+OS are built automatically by GitHub Actions and attached to every `v*` tag's
+release — see [Cross-platform builds (CI)](#cross-platform-builds-ci) above.
 
-Cross-platform packaging is deferred:
-
-- **Windows `.exe` and macOS `.app` builds.** PyInstaller cannot
-  cross-compile, so a Windows executable must be produced on Windows and a
-  macOS app on macOS. The spec should generalize cleanly (the only
-  platform-specific lines are `console=` and the bootloader, which
-  PyInstaller picks automatically), but each platform will likely need its
-  own spec tweaks (icon, code-signing, `console=False`).
-- **CI matrix (GitHub Actions)** to run `uv sync && uv run pyinstaller <spec>`
-  on Windows, macOS, and Linux runners and upload `dist/sandfall*` artifacts
-  against release tags — the natural place to flip `console=False` and apply
-  signing.
+The **only** remaining deferred packaging item is **code-signing /
+notarization** (a Windows code-signing cert + a macOS Developer ID /
+notarytool), which needs credentials the project does not yet have. Until
+then, v1 ships **unsigned** binaries: Windows SmartScreen and macOS
+Gatekeeper will warn end users of an "unidentified developer" (the
+`xattr` workaround for macOS is in the caveat above).

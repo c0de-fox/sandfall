@@ -49,6 +49,12 @@
 - **Line tool + eyedropper + element hotkeys (1-9).** Cheap UX completions to
   the brush/palette shipped under `brush-zoom-ui`.
   `source: brush-zoom-ui/00` (line tool / more brush shapes), `sandfall-temperature/00` (eyedropper).
+- **Plant growth review** — plant grows too slowly (`GROW_CHANCE=0.02` ≈ ~50
+  steps per new cell on average when water-adjacent) and the water-proximity
+  growth mechanic is not obvious/discoverable. Look at: (a) tuning
+  `GROW_CHANCE` up; (b) making the water→growth interaction visible (a cue when
+  plant is near water, or a tooltip/description noting it grows adjacent to
+  water). `source:` user feedback.
 - **(Perf) `can_displace` phase/density LUT** — the next busy-scene perf lever
   after `Grid.move`. `can_displace` does two `ELEMENTS` dict lookups per
   candidate neighbor; a lookup table indexed by `(src_id, target_id)` would cut

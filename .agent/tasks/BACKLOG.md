@@ -8,20 +8,17 @@
 > Each item cites its `source:` plan/reflection so you can pull the full
 > rationale in one hop.
 
-## In progress
+## Recently shipped
 
-- **`Grid.move` raw-array fast-swap** is currently being planned under
-  `.agent/tasks/perf-grid-move/` (collapses the per-move `swap` from 12 Grid
-  method calls to 1; ~2-3× on the busy/moving-scene per-cell rule cost; the
-  deferred `can_displace` LUT in **Tier 1** below is its planned follow-on).
-  `source: perf-grid-move/00` (this round); flagged in
-  `performance-active-set/00` + `performance-dormant-cells/00` Out-of-Scope.
-- **Float temps + ice cold source** is planned under
-  `.agent/tasks/thermal-float-ice/` (switches `_temp` to `float32` to kill the
-  int16 rounding stall that broke ice-freezing-water; reworks ice into a
-  persistent cold source so it freezes water via the thermal system). Its
-  realistic-rework follow-on is the new **Tier 2** "Thermal realism" entry
-  below; the **Cleanup** "float32 temp storage" item is consumed by this round.
+- **`Grid.move` raw-array fast-swap** (`85f6a68`) — collapsed the per-move `swap`
+  from 12 Grid method calls to 1; ~1.6× on busy/moving scenes. Its follow-on,
+  the **`can_displace` LUT** (Tier 1), is still the next perf lever.
+- **Float temps + ice cold source** (`c575ccb`, `b2669a9`) — `_temp` is float32
+  (kills the int16 rounding stall); ice is a persistent cold source that freezes
+  water. The realistic-rework follow-on is the **Tier 2 "Thermal realism"** entry.
+- **Acid + Base** (`new-elements/01`) — `ACID=12`/`BASE=13`, consumed-on-dissolve
+  reactive liquids (acid eats all but glass; base eats all but stone; acid+base→
+  water). **Oil** (Phase 2 of `new-elements/`) is the in-progress follow-on.
 
 ---
 

@@ -68,18 +68,18 @@ SIM_AREA_HEIGHT = INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT  # 600 - 40 == 560
 GRID_WIDTH = INITIAL_WINDOW_W // CELL_SIZE  # 800 // 4 == 200  (initial cols)
 GRID_HEIGHT = SIM_AREA_HEIGHT // CELL_SIZE  # 560 // 4 == 140  (initial rows)
 
-# Minimum window size. Width must fit the whole palette (14 items: 11 element
+# Minimum window size. Width must fit the whole palette (16 items: 13 element
 # swatches + Eraser + Brush-shape + Magnifier). Width math:
-#   14 * PALETTE_SWATCH + 13 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
-#   = 14*24 + 13*4 + 12 + 2*8 = 336 + 52 + 12 + 16 = 416  (== 104 * CELL_SIZE)
-# 416 is the next clean CELL_SIZE multiple above the needed 416, = 104 cols.
+#   16 * PALETTE_SWATCH + 15 * PALETTE_PADDING + PALETTE_GROUP_GAP + 2 * PALETTE_MARGIN
+#   = 16*24 + 15*4 + 12 + 2*8 = 384 + 60 + 12 + 16 = 472  (== 118 * CELL_SIZE)
+# 472 is the next clean CELL_SIZE multiple above the needed 472, = 118 cols.
 # Height must fit the 40px palette + a usable sim area (>= 40 cells == 160px)
 # -> 200. The minimum is enforced by the compositor via Window.minimum_size
 # (see Game.__init__); compute_grid_dims additionally floor-clamps the GRID
 # cols/rows to MIN_GRID_* so a tiny window still has a usable grid.
-MIN_WINDOW_W = 416
+MIN_WINDOW_W = 472
 MIN_WINDOW_H = 200
-MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 416 // 4 == 104
+MIN_GRID_COLS = MIN_WINDOW_W // CELL_SIZE  # 472 // 4 == 118
 MIN_GRID_ROWS = (MIN_WINDOW_H - PALETTE_BAR_HEIGHT) // CELL_SIZE  # 160 // 4 == 40
 
 # --- Loop -------------------------------------------------------------------
@@ -125,6 +125,9 @@ COND_STEAM = 0.25
 COND_ICE = 0.18
 COND_LAVA = 0.45
 COND_GLASS = 0.10
+# New reactive liquids (acid/base pair).
+COND_ACID = 0.30
+COND_BASE = 0.30
 
 # Per-material heat capacity (thermal inertia / thermal mass). Divides the
 # temperature change in diffuse_temps: high cp = changes slowly = thermally
@@ -144,6 +147,9 @@ CP_STEAM = 0.5
 CP_ICE = 2.0
 CP_LAVA = 5.0  # VERY high thermal mass — lava persists (solidifies ~step 27)
 CP_GLASS = 1.5
+# New reactive liquids (acid/base pair).
+CP_ACID = 2.0
+CP_BASE = 2.0
 
 # --- Heat-overlay display band (Phase 04) -----------------------------------
 # ``thermal.thermal_to_rgb`` maps the temp field's full color span across

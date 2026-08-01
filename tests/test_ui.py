@@ -32,13 +32,13 @@ def _non_empty_element_ids() -> list[ElementId]:
     return [eid for eid in ElementId if eid != ElementId.EMPTY]
 
 
-def test_palette_layout_has_11_elements_then_3_tools() -> None:
+def test_palette_layout_has_13_elements_then_3_tools() -> None:
     items = palette_layout(INITIAL_WINDOW_W, INITIAL_WINDOW_H - PALETTE_BAR_HEIGHT)
 
     elements = [it for it in items if it.is_element]
     tools = [it for it in items if it.is_tool]
-    # 11 real element swatches (EMPTY excluded) + 3 utility tools.
-    assert len(elements) == len(ElementId) - 1 == 11
+    # 13 real element swatches (EMPTY excluded) + 3 utility tools.
+    assert len(elements) == len(ElementId) - 1 == 13
     # Element swatches appear in ElementId ascending order (EMPTY skipped).
     assert [it.element_id for it in elements] == _non_empty_element_ids()
     # Tools follow in the fixed order Eraser, Brush-shape, Magnifier.
@@ -195,14 +195,15 @@ def test_item_at_on_eraser_returns_eraser_tool() -> None:
     assert hit.is_element is False
 
 
-def test_palette_resolves_phase03_elements_and_fits_min_window() -> None:
-    """Phase 03 added STEAM/ICE/LAVA/GLASS swatches; Phase 01 reorged the row
-    into 14 items (11 elements + 3 tools) separated by a group gap.
+def test_palette_resolves_new_elements_and_fits_min_window() -> None:
+    """Phase 03 added STEAM/ICE/LAVA/GLASS swatches; the acid/base pair adds
+    ACID/BASE swatches, growing the row into 16 items (13 elements + 3 tools)
+    separated by a group gap.
 
-    The Phase-03 elements still resolve via ``item_at`` at their center pixel,
-    and the whole 14-item + group-gap row fits inside ``MIN_WINDOW_W``
-    (bumped to 416 = 104 cols so the wider gap-separated palette still fits at
-    the minimum window size).
+    The new elements still resolve via ``item_at`` at their center pixel, and
+    the whole 16-item + group-gap row fits inside ``MIN_WINDOW_W`` (bumped to
+    472 = 118 cols so the wider gap-separated palette still fits at the minimum
+    window size).
     """
     from sandfall.config import (
         MIN_WINDOW_W,
@@ -213,7 +214,14 @@ def test_palette_resolves_phase03_elements_and_fits_min_window() -> None:
 
     ui = UI(INITIAL_WINDOW_W, INITIAL_WINDOW_H)
 
-    new_elements = [ElementId.STEAM, ElementId.ICE, ElementId.LAVA, ElementId.GLASS]
+    new_elements = [
+        ElementId.STEAM,
+        ElementId.ICE,
+        ElementId.LAVA,
+        ElementId.GLASS,
+        ElementId.ACID,
+        ElementId.BASE,
+    ]
     by_id = {it.element_id: it for it in ui.items if it.is_element}
     for eid in new_elements:
         assert eid in by_id, f"{eid!r} missing from palette"
@@ -224,14 +232,14 @@ def test_palette_resolves_phase03_elements_and_fits_min_window() -> None:
         assert hit is not None
         assert hit.element_id == eid
 
-    # The full 14-item + group-gap row fits within MIN_WINDOW_W at the min size.
+    # The full 16-item + group-gap row fits within MIN_WINDOW_W at the min size.
     last = ui.items[-1]
     assert last.x + last.w + PALETTE_MARGIN <= MIN_WINDOW_W
-    # And the documented math: 14 items, 13 inter-item paddings, 1 group gap,
+    # And the documented math: 16 items, 15 inter-item paddings, 1 group gap,
     # 2 outer margins.
     assert (
-        14 * PALETTE_SWATCH
-        + 13 * PALETTE_PADDING
+        16 * PALETTE_SWATCH
+        + 15 * PALETTE_PADDING
         + PALETTE_GROUP_GAP
         + 2 * PALETTE_MARGIN
         <= MIN_WINDOW_W

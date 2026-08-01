@@ -92,14 +92,15 @@ def test_compute_grid_dims_min_constants_are_consistent() -> None:
 
 def test_min_window_width_fits_full_palette_with_group_gap() -> None:
     """Phase 01 reorged the palette into 11 elements + 3 utility tools with a
-    group gap; MIN_WINDOW_W must fit the wider row.
+    group gap; the acid/base pair grows it to 13 elements (16 items total), so
+    MIN_WINDOW_W must fit the wider row.
 
-    The palette row is 14 items (11 element swatches + Eraser + Brush-shape +
+    The palette row is 16 items (13 element swatches + Eraser + Brush-shape +
     Magnifier), each ``PALETTE_SWATCH`` square with ``PALETTE_PADDING``
     between neighbors, an extra ``PALETTE_GROUP_GAP`` between the element and
     utility groups, and a margin at each end:
-    14*24 + 13*4 + 12 + 2*8 == 416px. ``MIN_WINDOW_W`` is exactly that value
-    (= 104 cols), so the gap-separated palette fits at the minimum size.
+    16*24 + 15*4 + 12 + 2*8 == 472px. ``MIN_WINDOW_W`` is exactly that value
+    (= 118 cols), so the gap-separated palette fits at the minimum size.
     """
     from sandfall.config import (
         MIN_WINDOW_W,
@@ -109,14 +110,14 @@ def test_min_window_width_fits_full_palette_with_group_gap() -> None:
         PALETTE_SWATCH,
     )
 
-    assert MIN_WINDOW_W == 416
+    assert MIN_WINDOW_W == 472
     needed = (
-        14 * PALETTE_SWATCH
-        + 13 * PALETTE_PADDING
+        16 * PALETTE_SWATCH
+        + 15 * PALETTE_PADDING
         + PALETTE_GROUP_GAP
         + 2 * PALETTE_MARGIN
     )
-    assert needed == 416
+    assert needed == 472
     assert MIN_WINDOW_W >= needed
     # MIN_GRID_COLS recomputed from the bumped width.
-    assert MIN_GRID_COLS == MIN_WINDOW_W // CELL_SIZE == 104
+    assert MIN_GRID_COLS == MIN_WINDOW_W // CELL_SIZE == 118

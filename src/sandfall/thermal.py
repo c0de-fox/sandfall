@@ -15,6 +15,8 @@ import numpy as np
 import numpy.typing as npt
 
 from .config import (
+    COND_ACID,
+    COND_BASE,
     COND_EMPTY,
     COND_FIRE,
     COND_GLASS,
@@ -27,6 +29,8 @@ from .config import (
     COND_STONE,
     COND_WATER,
     COND_WOOD,
+    CP_ACID,
+    CP_BASE,
     CP_EMPTY,
     CP_FIRE,
     CP_GLASS,
@@ -71,6 +75,9 @@ def build_conductivity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.ICE)] = COND_ICE
     lut[int(ElementId.LAVA)] = COND_LAVA
     lut[int(ElementId.GLASS)] = COND_GLASS
+    # New reactive liquids (rows 12..13).
+    lut[int(ElementId.ACID)] = COND_ACID
+    lut[int(ElementId.BASE)] = COND_BASE
     return lut
 
 
@@ -96,6 +103,9 @@ def build_heat_capacity_lut() -> npt.NDArray[np.float64]:
     lut[int(ElementId.ICE)] = CP_ICE
     lut[int(ElementId.LAVA)] = CP_LAVA
     lut[int(ElementId.GLASS)] = CP_GLASS
+    # New reactive liquids (rows 12..13).
+    lut[int(ElementId.ACID)] = CP_ACID
+    lut[int(ElementId.BASE)] = CP_BASE
     return lut
 
 

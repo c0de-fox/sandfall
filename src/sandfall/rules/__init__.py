@@ -19,6 +19,8 @@ from collections.abc import Callable
 from ..elements import ElementId
 from ..grid import Grid
 from ._common import seed_fire_life, seed_smoke_life, seed_steam_life
+from .acid import update_acid
+from .base import update_base
 from .fire import update_fire
 from .glass import update_glass
 from .ice import update_ice
@@ -60,4 +62,7 @@ RULES: dict[ElementId, UpdateFn] = {
     ElementId.ICE: update_ice,
     ElementId.LAVA: update_lava,
     ElementId.GLASS: update_glass,
+    # New reactive liquids (acid/base pair).
+    ElementId.ACID: update_acid,
+    ElementId.BASE: update_base,
 }

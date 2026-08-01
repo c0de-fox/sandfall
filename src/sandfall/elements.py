@@ -30,6 +30,12 @@ class ElementId(IntEnum):
     v1 code relies on (renderer color LUT, conductivity LUT) stays stable;
     new members take 8..11. ``uint8`` holds up to 255, so there is ample
     room for future elements.
+
+    Extended again with the acid/base pair (ACID=12, BASE=13) — two dense
+    reactive liquids that dissolve neighboring materials, neutralize each
+    other into water, dilute in water, and burn to FIRE when heated. Same
+    supported-operation status as the 8..11 members; existing values 0..11
+    are unchanged so every LUT index stays stable.
     """
 
     EMPTY = 0
@@ -44,6 +50,9 @@ class ElementId(IntEnum):
     ICE = 9
     LAVA = 10
     GLASS = 11
+    # --- New elements (acid/base pair) ---
+    ACID = 12
+    BASE = 13
 
 
 class Phase(IntEnum):
@@ -235,5 +244,33 @@ ELEMENTS: dict[ElementId, Element] = {
         conductivity=0.10,
         heat_capacity=1.5,
         # Made only by SAND melting; static once formed (no transitions).
+    ),
+    # --- Acid + Base (dense reactive liquids; consumed-on-dissolve) ---------
+    # Both are LIQUID (density 1.2, denser than WATER 1.0 -> sink through water).
+    # flashpoint ~200 -> burn to FIRE when heated by lava/fire (thermal path);
+    # burn_temp ~600 documents the fuel character (active heat comes from the
+    # FIRE rule, same as WOOD/PLANT). The dissolve/neutralize/dilute logic lives
+    # entirely in rules/acid.py + rules/base.py (no Element fields for it).
+    ElementId.ACID: Element(
+        id=ElementId.ACID,
+        name="acid",
+        color=(110, 220, 70),  # bright acid green
+        density=1.2,
+        phase=Phase.LIQUID,
+        conductivity=0.30,
+        heat_capacity=2.0,
+        flashpoint=200,
+        burn_temp=600,
+    ),
+    ElementId.BASE: Element(
+        id=ElementId.BASE,
+        name="base",
+        color=(180, 90, 200),  # violet (alkali)
+        density=1.2,
+        phase=Phase.LIQUID,
+        conductivity=0.30,
+        heat_capacity=2.0,
+        flashpoint=200,
+        burn_temp=600,
     ),
 }

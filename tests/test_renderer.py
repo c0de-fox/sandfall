@@ -60,23 +60,29 @@ def test_build_color_lut_matches_registered_colors() -> None:
         assert tuple(lut[int(eid)]) == element.color
 
 
-def test_build_color_lut_grew_to_twelve_rows_with_new_elements() -> None:
-    """Phase 03 grew ElementId 8 -> 12; the LUT must auto-resize (it sizes
-    from ``len(ElementId)``) and rows 8..11 must carry the 4 new element
-    colors at the correct stable indices. No ``renderer.py`` edit was needed
-    for this — the LUT builder iterates ``ELEMENTS`` and sizes from the enum.
+def test_build_color_lut_grew_with_new_elements() -> None:
+    """Phase 03 grew ElementId 8 -> 12; the acid/base pair grows it 12 -> 14.
+    The LUT must auto-resize (it sizes from ``len(ElementId)``) and rows 8..13
+    must carry the new element colors at the correct stable indices. No
+    ``renderer.py`` edit was needed for this — the LUT builder iterates
+    ``ELEMENTS`` and sizes from the enum.
     """
     lut = build_color_lut()
 
-    # The enum has exactly 12 members (v1 values 0..7 unchanged + 8..11 new).
-    assert len(ElementId) == 12
-    assert [e.value for e in ElementId] == list(range(12))
+    # The enum has exactly 14 members (v1 values 0..7 unchanged + 8..13 new).
+    assert len(ElementId) == 14
+    assert [e.value for e in ElementId] == list(range(14))
     # LUT shape tracks the enum width.
-    assert lut.shape == (12, 3)
-    # The 4 new elements land at indices 8..11 and carry their registered colors.
-    new_elements = [ElementId.STEAM, ElementId.ICE, ElementId.LAVA, ElementId.GLASS]
-    assert [int(e) for e in new_elements] == [8, 9, 10, 11]
-    for eid in new_elements:
+    assert lut.shape == (14, 3)
+    # The Phase-03 elements land at indices 8..11.
+    phase03_elements = [ElementId.STEAM, ElementId.ICE, ElementId.LAVA, ElementId.GLASS]
+    assert [int(e) for e in phase03_elements] == [8, 9, 10, 11]
+    for eid in phase03_elements:
+        assert tuple(lut[int(eid)]) == ELEMENTS[eid].color
+    # The acid/base pair lands at indices 12..13 and carries its registered colors.
+    acid_base = [ElementId.ACID, ElementId.BASE]
+    assert [int(e) for e in acid_base] == [12, 13]
+    for eid in acid_base:
         assert tuple(lut[int(eid)]) == ELEMENTS[eid].color
 
 
